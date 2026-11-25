@@ -5,15 +5,23 @@ import {
   getShipPartSellValue,
   parseShipParts,
   SHIP_PART_STORAGE_CAPACITY,
+  SHIP_PART_SLOTS,
+  type EquippedShipParts,
   type ShipPart,
   type ShipPartSlot,
 } from './shipParts'
-import { ORION_SECTOR_ID } from '../domain/exploration'
+import { getGalaxy, ORION_SECTOR_ID, type GalaxyId } from '../domain/galaxyChart'
 import { getMission, isMissionComplete, MISSIONS, type MissionId } from '../missions/definitions'
 import { DAMAGE_TYPES, DEFAULT_SHIP_RESISTANCES, getDamageResistance, MAX_DAMAGE_RESISTANCE, type DamageType, type ResistanceProfile } from '../domain/damageTypes'
 import type { ShipVitals } from '../domain/shipTelemetry'
+import { canLearnPilotSkill, PILOT_SKILLS, readPilotSkills, type PilotSkillId } from './pilotSkills'
 
 export interface MissionProgress {
+  worldSeed: number
+  prologueComplete: boolean
+  repairMask: number
+  orbitPlanetId: string | null
+  droneRespawns: Record<string, number>
   shipVitals: ShipVitals | null
   completedMissions: MissionId[]
   missionObjectiveProgress: Partial<Record<MissionId, number>>
@@ -29,17 +37,19 @@ export interface MissionProgress {
   nullChoirRuns: number
   relayData: number
   experience: number
+  pilotSkills: PilotSkillId[]
   scrapMetal: number
   copper: number
   radioactiveResidue: number
   visitedPlanets: string[]
   defeatedDrones: string[]
-  sectorId: string
+  purchasedMerchantOffers: string[]
+  sectorId: GalaxyId
   sectorX: number
   sectorY: number
   sectorDistance: number
   shipParts: ShipPart[]
-  equippedParts: Record<ShipPartSlot, string | null>
+  equippedParts: EquippedShipParts
 }
 
 export interface SectorLoot {
@@ -74,6 +84,7 @@ const STORAGE_KEY = 'neon-void:mission-progress:v1'
 
 export function createEmptyMissionProgress(): MissionProgress {
   return {
+    worldSeed: 0, prologueComplete: true, repairMask: 0, orbitPlanetId: null, droneRespawns: {},
     shipVitals: null,
     completedMissions: [],
     missionObjectiveProgress: {},
@@ -89,11 +100,13 @@ export function createEmptyMissionProgress(): MissionProgress {
     nullChoirRuns: 0,
     relayData: 0,
     experience: 0,
+    pilotSkills: [],
     scrapMetal: 0,
     copper: 0,
     radioactiveResidue: 0,
     visitedPlanets: [],
     defeatedDrones: [],
+    purchasedMerchantOffers: [],
     sectorId: ORION_SECTOR_ID,
     sectorX: 0,
     sectorY: 0,
@@ -131,6 +144,11 @@ export function loadMissionProgress(): MissionProgress {
     }
 
     return {
+      worldSeed: nonNegativeNumber(parsed.worldSeed) >>> 0,
+      prologueComplete: parsed.prologueComplete !== false,
+      repairMask: Math.floor(nonNegativeNumber(parsed.repairMask)) & 7,
+      orbitPlanetId: typeof parsed.orbitPlanetId === 'string' ? parsed.orbitPlanetId : null,
+      droneRespawns: parsed.droneRespawns && typeof parsed.droneRespawns === 'object' ? Object.fromEntries(Object.entries(parsed.droneRespawns).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0)) : {},
       shipVitals: parsed.shipVitals && typeof parsed.shipVitals === 'object'
         && typeof parsed.shipVitals.hull === 'number' && Number.isFinite(parsed.shipVitals.hull)
         && typeof parsed.shipVitals.shield === 'number' && Number.isFinite(parsed.shipVitals.shield)
@@ -151,6 +169,7 @@ export function loadMissionProgress(): MissionProgress {
       nullChoirRuns: typeof parsed.nullChoirRuns === 'number' ? parsed.nullChoirRuns : 0,
       relayData: typeof parsed.relayData === 'number' ? parsed.relayData : 0,
       experience: nonNegativeNumber(parsed.experience),
+      pilotSkills: readPilotSkills(parsed.pilotSkills, getPilotLevel(nonNegativeNumber(parsed.experience))),
       scrapMetal: nonNegativeNumber(parsed.scrapMetal),
       copper: nonNegativeNumber(parsed.copper),
       radioactiveResidue: nonNegativeNumber(parsed.radioactiveResidue),
@@ -160,7 +179,9 @@ export function loadMissionProgress(): MissionProgress {
       defeatedDrones: Array.isArray(parsed.defeatedDrones)
         ? parsed.defeatedDrones.filter((id): id is string => typeof id === 'string')
         : [],
-      sectorId: ORION_SECTOR_ID,
+      purchasedMerchantOffers: Array.isArray(parsed.purchasedMerchantOffers)
+        ? parsed.purchasedMerchantOffers.filter((id): id is string => typeof id === 'string') : [],
+      sectorId: getGalaxy(parsed.sectorId).id,
       sectorX: finiteNumber(parsed.sectorX),
       sectorY: finiteNumber(parsed.sectorY),
       sectorDistance: nonNegativeNumber(parsed.sectorDistance),
@@ -169,6 +190,10 @@ export function loadMissionProgress(): MissionProgress {
         weapon: findEquippedPart('weapon'),
         shield: findEquippedPart('shield'),
         engine: findEquippedPart('engine'),
+        ...Object.fromEntries(SHIP_PART_SLOTS.slice(3).flatMap(slot => {
+          const id = findEquippedPart(slot)
+          return id ? [[slot, id]] : []
+        })),
       },
     }
   } catch {
@@ -183,7 +208,7 @@ export function applySalvageReward(progress: MissionProgress): MissionProgress {
     silentSignalRuns: progress.silentSignalRuns + 1,
     relayData: progress.relayData + 3,
     lastMission: 'victory',
-    experience: progress.experience + 70,
+    experience: progress.experience + scaleExperience(70),
   }
 }
 
@@ -193,7 +218,7 @@ export function applySignalSourceReward(progress: MissionProgress): MissionProgr
     credits: progress.credits + 180,
     signalSourceRuns: progress.signalSourceRuns + 1,
     lastMission: 'victory',
-    experience: progress.experience + 100,
+    experience: progress.experience + scaleExperience(100),
     scrapMetal: progress.scrapMetal + 3,
     copper: progress.copper + 1,
   }
@@ -205,7 +230,7 @@ export function applyVeilSurveyReward(progress: MissionProgress): MissionProgres
     credits: progress.credits + 150,
     veilSurveyRuns: progress.veilSurveyRuns + 1,
     lastMission: 'victory',
-    experience: progress.experience + 75,
+    experience: progress.experience + scaleExperience(75),
   }
 }
 
@@ -215,7 +240,7 @@ export function applyPatrolHuntReward(progress: MissionProgress): MissionProgres
     credits: progress.credits + 225,
     patrolHuntRuns: progress.patrolHuntRuns + 1,
     lastMission: 'victory',
-    experience: progress.experience + 110,
+    experience: progress.experience + scaleExperience(110),
     scrapMetal: progress.scrapMetal + 2,
     copper: progress.copper + 1,
   }
@@ -227,7 +252,7 @@ export function applyNullChoirReward(progress: MissionProgress): MissionProgress
     credits: progress.credits + 320,
     nullChoirRuns: progress.nullChoirRuns + 1,
     lastMission: 'victory',
-    experience: progress.experience + 160,
+    experience: progress.experience + scaleExperience(160),
     scrapMetal: progress.scrapMetal + 4,
     copper: progress.copper + 2,
     radioactiveResidue: progress.radioactiveResidue + 1,
@@ -260,7 +285,7 @@ export function completeWorldMission(progress: MissionProgress, id: MissionId): 
   const reward = legacyRewards[id]
   let next = reward ? reward(progress) : {
     ...progress, credits: progress.credits + mission.reward.credits,
-    experience: progress.experience + (mission.bossProfile ? 220 : 130),
+    experience: progress.experience + scaleExperience(mission.bossProfile ? 220 : 130),
     scrapMetal: progress.scrapMetal + 4, copper: progress.copper + 2,
     radioactiveResidue: progress.radioactiveResidue + 1, lastMission: 'victory' as const,
   }
@@ -286,7 +311,7 @@ export function applyMissionReward(progress: MissionProgress): MissionProgress {
     credits: progress.credits + 240,
     lastMission: 'victory',
     shieldLevel: progress.shieldLevel,
-    experience: progress.experience + 90,
+    experience: progress.experience + scaleExperience(90),
     scrapMetal: progress.scrapMetal + 3,
     copper: progress.copper + 2,
   }
@@ -314,28 +339,34 @@ export function getPilotExperienceProgress(experience: number): PilotExperienceP
   }
 }
 
+export function learnPilotSkill(progress: MissionProgress, id: PilotSkillId): MissionProgress {
+  const skill = PILOT_SKILLS.find(entry => entry.id === id)
+  if (!skill || !canLearnPilotSkill(skill, getPilotLevel(progress.experience), progress.pilotSkills)) return progress
+  return { ...progress, pilotSkills: [...progress.pilotSkills, id] }
+}
+
 export function getShipBonuses(progress: MissionProgress) {
-  const bonuses = getEquippedPartBonuses(progress.shipParts, {
-    weapon: progress.equippedParts.weapon ?? undefined,
-    shield: progress.equippedParts.shield ?? undefined,
-    engine: progress.equippedParts.engine ?? undefined,
-  })
+  const bonuses = getEquippedPartBonuses(progress.shipParts, progress.equippedParts)
   const levelBonus = getPilotLevel(progress.experience) - 1
+  const learned = progress.pilotSkills
   return {
     ...bonuses,
-    damagePercent: bonuses.damagePercent + levelBonus,
+    damagePercent: bonuses.damagePercent + levelBonus + (learned.includes('targeting') ? 8 : 0),
     shieldPoints: bonuses.shieldPoints + levelBonus * 4,
-    hullPoints: bonuses.hullPoints + levelBonus * 3,
+    hullPoints: bonuses.hullPoints + levelBonus * 3 + (learned.includes('field-repair') ? 14 : 0),
     ...(levelBonus > 0
-      ? { handlingPercent: levelBonus * 2, speedPercent: levelBonus }
+      ? { handlingPercent: levelBonus * 2 + (learned.includes('flight-trim') ? 14 : 0), speedPercent: levelBonus }
       : {}),
+    ...(learned.includes('vector-dodge') ? { dodgeCooldownPercent: Math.min(55, (bonuses.dodgeCooldownPercent ?? 0) + 25) } : {}),
+    ...(learned.includes('long-scan') ? { sensorRangePercent: (bonuses.sensorRangePercent ?? 0) + 40 } : {}),
   }
 }
 
 /** Only installed modules contribute; old parts without resistance data remain valid. */
 export function getShipResistances(progress: MissionProgress): ResistanceProfile {
   const result = Object.fromEntries(DAMAGE_TYPES.map(type => [type, getDamageResistance(type, DEFAULT_SHIP_RESISTANCES)])) as Record<DamageType, number>
-  for (const slot of ['weapon', 'shield', 'engine'] as const) {
+  if (progress.pilotSkills.includes('impact-bracing')) result.kinetic = Math.min(MAX_DAMAGE_RESISTANCE, result.kinetic + 0.10)
+  for (const slot of SHIP_PART_SLOTS) {
     const part = progress.shipParts.find(item => item.id === progress.equippedParts[slot] && item.slot === slot)
     if (!part) continue
     for (const type of DAMAGE_TYPES) {
@@ -361,18 +392,20 @@ export function applyDroneLoot(
   progress: MissionProgress,
   droneId: string,
   loot: SectorLoot,
+  respawnAt?: number,
 ): MissionProgress {
   if (progress.defeatedDrones.includes(droneId)) return progress
   return {
     ...applyLoot(progress, loot),
     defeatedDrones: [...progress.defeatedDrones, droneId],
+    droneRespawns: respawnAt ? { ...progress.droneRespawns, [droneId]: respawnAt } : progress.droneRespawns,
   }
 }
 
 export function rollPlanetLoot(random: () => number = Math.random): SectorLoot {
   return {
     credits: 20 + Math.floor(random() * 26),
-    experience: 35 + Math.floor(random() * 16),
+    experience: scaleExperience(35 + Math.floor(random() * 16)),
     scrapMetal: 2 + Math.floor(random() * 3),
     copper: 1 + Math.floor(random() * 3),
     radioactiveResidue: random() < 0.45 ? 1 : 0,
@@ -382,7 +415,7 @@ export function rollPlanetLoot(random: () => number = Math.random): SectorLoot {
 export function rollDroneLoot(random: () => number = Math.random): SectorLoot {
   return {
     credits: 8 + Math.floor(random() * 13),
-    experience: 20 + Math.floor(random() * 11),
+    experience: scaleExperience(20 + Math.floor(random() * 11)),
     scrapMetal: random() < 0.75 ? 1 + Math.floor(random() * 2) : 0,
     copper: random() < 0.5 ? 1 : 0,
     radioactiveResidue: random() < 0.12 ? 1 : 0,
@@ -398,7 +431,7 @@ export function updateSectorPosition(
 ): MissionProgress {
   return {
     ...progress,
-    sectorId,
+    sectorId: getGalaxy(sectorId).id,
     sectorX: finiteNumber(x),
     sectorY: finiteNumber(y),
     sectorDistance: nonNegativeNumber(distance),
@@ -507,4 +540,13 @@ function nonNegativeNumber(value: unknown): number {
 
 function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** All experience awards share this balance multiplier; existing levels are preserved. */
+export function scaleExperience(base: number): number { return base * 0.5 }
+
+export function restoreDroneSpawn(progress: MissionProgress, id: string): MissionProgress {
+  const droneRespawns = { ...progress.droneRespawns }
+  delete droneRespawns[id]
+  return { ...progress, defeatedDrones: progress.defeatedDrones.filter(item => item !== id), droneRespawns }
 }

@@ -1,8 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { createNewCampaign, prepareWorld } from './game/progress/worldSession'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { getNextCampaignMission, isMissionComplete, MISSIONS, type MissionId } from './game/missions/definitions'
 import { FLIGHT_COMMANDS, type FlightCommand } from './game/input/InputController'
-import { ORION_SECTOR_ID, ORION_STATIONS, type SectorPosition } from './game/domain/exploration'
+import { getGalaxyWorld, ORION_SECTOR_ID, type SectorPosition } from './game/domain/exploration'
+import { GALAXY_ARRIVAL, getGalaxy, type GalaxyId } from './game/domain/galaxyChart'
 import {
   applyDroneLoot,
   applyPlanetLoot,
@@ -13,8 +15,9 @@ import {
   equipShipPart,
   getPilotLevel,
   getShipBonuses,
+  learnPilotSkill,
   unequipShipPart,
-  createEmptyMissionProgress,
+  restoreDroneSpawn,
   hasMissionProgress,
   loadMissionProgress,
   rerollShipPart,
@@ -31,9 +34,10 @@ import {
   getEquippedPartRarities,
   getShipPartLevelRequirement,
   getShipPartSellValue,
-  type ShipPartSlot,
+  SHIP_PART_SLOTS,
 } from './game/progress/shipParts'
 import { HANGAR_CONVERSATIONS, HANGAR_CREW } from './game/hangar/crew'
+import { HangarCrewPanel } from './game/ui/HangarCrewPanel'
 import PilotInventory from './game/ui/PilotInventory'
 import { MaterialArtwork, PartArtwork } from './game/ui/EquipmentArtwork'
 import './game/ui/GarageArtwork.css'
@@ -41,9 +45,13 @@ import { PilotProgressBar } from './game/ui/PilotProgressBar'
 import { GamePauseOverlay } from './game/ui/GamePauseOverlay'
 import { ShipResistanceReadout } from './game/ui/ShipResistanceReadout'
 import { ShipStatisticsPanel } from './game/ui/ShipStatisticsPanel'
+import { getShipPartSlotLabel } from './game/ui/shipPartPresentation'
 import { HangarMaintenancePanel } from './game/ui/HangarMaintenancePanel'
 import { ShipStatusHud } from './game/ui/ShipStatusHud'
 import { NavigationJournal } from './game/ui/NavigationJournal'
+import { GalaxyTravel } from './game/ui/GalaxyTravel'
+import { GraphicsOptions } from './game/ui/GraphicsOptions'
+import { MerchantPanel } from './game/ui/MerchantPanel'
 import { useApplicationAudio } from './game/audio/useApplicationAudio'
 import { getShipVitals, rechargeShipShields, regenerateHangarHull, updateShipVitals } from './game/progress/shipMaintenance'
 import { getMaximumShipVitals } from './game/domain/shipTelemetry'
@@ -59,9 +67,10 @@ import {
 const SectorCanvas = lazy(() => import('./game/renderer/SectorCanvas').then((module) => ({
   default: module.SectorCanvas,
 })))
+const ShipRecovery = lazy(() => import('./game/ui/ShipRecovery').then(module => ({ default: module.ShipRecovery })))
 type GarageSceneComponent = typeof import('./game/renderer/GarageCanvas')['GarageCanvas']
 
-type Screen = 'title' | 'campaign' | 'garage' | 'exploration' | 'settings' | 'credits' | 'quit'
+type Screen = 'prologue' | 'title' | 'campaign' | 'garage' | 'exploration' | 'settings' | 'credits' | 'quit'
 type ReturnScreen = 'title' | 'campaign' | 'exploration'
 
 function getKeyLabel(code: string, language: 'pl' | 'en'): string {
@@ -77,10 +86,11 @@ function getKeyLabel(code: string, language: 'pl' | 'en'): string {
 
 function App() {
   const [screen, setScreen] = useState<Screen>('title')
+  const [prologueLaunching, setPrologueLaunching] = useState(false)
   const [journalReturnScreen, setJournalReturnScreen] = useState<'exploration' | 'garage'>('exploration')
   const [returnScreen, setReturnScreen] = useState<ReturnScreen>('title')
   const [settings, setSettings] = useState(loadGameSettings)
-  const [progress, setProgress] = useState(loadMissionProgress)
+  const [progress, setProgress] = useState(() => prepareWorld(loadMissionProgress()))
   const [hasSave, setHasSave] = useState(hasMissionProgress)
   const [confirmNewGame, setConfirmNewGame] = useState(false)
   const [garagePanelOpen, setGaragePanelOpen] = useState(true)
@@ -105,9 +115,17 @@ function App() {
   const [departureWorldReady, setDepartureWorldReady] = useState(false)
   const [GarageScene, setGarageScene] = useState<GarageSceneComponent | null>(null)
   const [combatActive, setCombatActive] = useState(false)
+  const [merchantOpen, setMerchantOpen] = useState(false)
+  const [galaxyChartOpen, setGalaxyChartOpen] = useState(false)
+  const [jumpDestination, setJumpDestination] = useState<GalaxyId | null>(null)
+  const [boundaryCourse, setBoundaryCourse] = useState(false)
+  const routeActive = galaxyChartOpen || jumpDestination !== null || boundaryCourse
   const language = settings.language
+  const world = useMemo(() => getGalaxyWorld(progress.sectorId, progress.worldSeed), [progress.sectorId, progress.worldSeed])
   const applicationAudio = useApplicationAudio(screen, { main: settings.mainVolume, shots: settings.shotsVolume, music: settings.musicVolume })
-  const activeMission = trackedMissionId && !isMissionComplete(progress, trackedMissionId) ? trackedMissionId : getNextCampaignMission(progress)
+  const activeMission = world.galaxy.id === ORION_SECTOR_ID
+    ? trackedMissionId && !isMissionComplete(progress, trackedMissionId) ? trackedMissionId : getNextCampaignMission(progress)
+    : null
   const displayedExperience = progress.experience
   const equippedPartRarities = getEquippedPartRarities(progress.shipParts, progress.equippedParts)
   const updateShipTelemetry = useCallback((telemetry: ShipTelemetry) => { shipTelemetryRef.current = telemetry }, [])
@@ -170,7 +188,7 @@ function App() {
   useEffect(() => {
     if (screen !== 'campaign' && screen !== 'exploration' && screen !== 'garage') return
     const toggleJournal = (event: KeyboardEvent) => {
-      if (event.code !== 'KeyL' || event.repeat || rebindingCommand || statisticsOpen || inventoryOpen || pauseOpen || pauseSettingsOpen) return
+      if (event.code !== 'KeyL' || event.repeat || rebindingCommand || statisticsOpen || inventoryOpen || pauseOpen || pauseSettingsOpen || merchantOpen || routeActive) return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
       if (departureStationId || (screen === 'garage' ? !garageLanded : screen === 'exploration' && dockingStationId)) return
@@ -181,7 +199,7 @@ function App() {
     }
     window.addEventListener('keydown', toggleJournal, true)
     return () => window.removeEventListener('keydown', toggleJournal, true)
-  }, [screen, journalReturnScreen, rebindingCommand, statisticsOpen, inventoryOpen, pauseOpen, pauseSettingsOpen, departureStationId, garageLanded, dockingStationId])
+  }, [screen, journalReturnScreen, rebindingCommand, statisticsOpen, inventoryOpen, pauseOpen, pauseSettingsOpen, departureStationId, garageLanded, dockingStationId, merchantOpen, routeActive])
 
   useEffect(() => {
     if (screen !== 'campaign' && screen !== 'exploration' && screen !== 'garage') return
@@ -193,7 +211,7 @@ function App() {
         setStatisticsOpen(false)
         return
       }
-      if (event.code !== 'KeyC' || event.repeat || rebindingCommand || pauseOpen || pauseSettingsOpen) return
+      if (event.code !== 'KeyC' || event.repeat || rebindingCommand || pauseOpen || pauseSettingsOpen || merchantOpen || routeActive) return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
       if (departureStationId || (screen === 'garage' ? !garageLanded : dockingStationId !== null)) return
@@ -205,13 +223,16 @@ function App() {
     }
     window.addEventListener('keydown', handleStatisticsShortcut, true)
     return () => window.removeEventListener('keydown', handleStatisticsShortcut, true)
-  }, [screen, statisticsOpen, rebindingCommand, pauseOpen, pauseSettingsOpen, garageLanded, dockingStationId, departureStationId])
+  }, [screen, statisticsOpen, rebindingCommand, pauseOpen, pauseSettingsOpen, garageLanded, dockingStationId, departureStationId, merchantOpen, routeActive])
 
   useEffect(() => {
     if (screen !== 'campaign' && screen !== 'exploration' && screen !== 'garage') return
 
     const handleInventoryShortcut = (event: KeyboardEvent) => {
-      if (event.code === 'KeyI' && !combatActive && !dockingStationId) {
+      if (event.code === 'KeyI' && !event.repeat && !combatActive && !rebindingCommand && !departureStationId
+        && (screen === 'garage' ? garageLanded : !dockingStationId) && !merchantOpen && !routeActive && !pauseOpen && !pauseSettingsOpen) {
+        const target = event.target
+        if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
         event.preventDefault()
         setStatisticsOpen(false)
         setInventoryOpen((open) => !open)
@@ -223,7 +244,13 @@ function App() {
 
     window.addEventListener('keydown', handleInventoryShortcut)
     return () => window.removeEventListener('keydown', handleInventoryShortcut)
-  }, [combatActive, dockingStationId, inventoryOpen, screen])
+  }, [combatActive, dockingStationId, inventoryOpen, screen, garageLanded, departureStationId, rebindingCommand, merchantOpen, routeActive, pauseOpen, pauseSettingsOpen])
+
+  const showShipStatistics = () => {
+    setStatisticsTelemetry(screen === 'garage' ? null : shipTelemetryRef.current)
+    setInventoryOpen(false)
+    setStatisticsOpen(true)
+  }
 
   useEffect(() => {
     if (screen !== 'exploration' || dockingStationId) return
@@ -231,6 +258,13 @@ function App() {
     const handlePauseShortcut = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || rebindingCommand) return
       event.preventDefault()
+      if (jumpDestination) return
+      if (galaxyChartOpen || merchantOpen || boundaryCourse) {
+        setGalaxyChartOpen(false)
+        setMerchantOpen(false)
+        setBoundaryCourse(false)
+        return
+      }
       if (inventoryOpen) {
         setInventoryOpen(false)
         return
@@ -245,10 +279,11 @@ function App() {
 
     window.addEventListener('keydown', handlePauseShortcut)
     return () => window.removeEventListener('keydown', handlePauseShortcut)
-  }, [dockingStationId, inventoryOpen, pauseSettingsOpen, rebindingCommand, screen])
+  }, [dockingStationId, inventoryOpen, pauseSettingsOpen, rebindingCommand, screen, galaxyChartOpen, merchantOpen, boundaryCourse, jumpDestination])
 
   const startNewGame = () => {
-    const fresh = createEmptyMissionProgress()
+    const fresh = createNewCampaign()
+    setPrologueLaunching(false)
     saveMissionProgress(fresh)
     setProgress(fresh)
     setStatisticsOpen(false)
@@ -266,9 +301,9 @@ function App() {
     setCombatActive(false)
     setDepartureStationId(null)
     setDepartureWorldReady(false)
-    setWorldSessionActive(true)
+    setWorldSessionActive(false)
     setWorldSessionKey(key => key + 1)
-    setScreen('exploration')
+    setScreen('prologue')
   }
 
   const exitGameplay = () => {
@@ -293,20 +328,21 @@ function App() {
 
   const loadGame = () => {
     if (!hasSave) return
-    const savedProgress = loadMissionProgress()
+    const savedProgress = prepareWorld(loadMissionProgress())
+    setPrologueLaunching(false)
     setProgress(savedProgress)
     setStatisticsOpen(false)
     shipTelemetryRef.current = null
     setInventoryOpen(false)
     setDepartureStationId(null)
     setDepartureWorldReady(false)
-    setWorldSessionActive(true)
+    setWorldSessionActive(savedProgress.prologueComplete)
     setWorldSessionKey(key => key + 1)
     setDockingStationId(null)
     setGarageReady(false)
     setGarageLanded(false)
     setCombatActive(false)
-    setScreen('exploration')
+    setScreen(savedProgress.prologueComplete ? 'exploration' : 'prologue')
   }
 
   const openSettings = (from: ReturnScreen) => {
@@ -334,7 +370,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (screen !== 'garage' || !garageLanded || departureStationId) return
+    const inHangar = screen === 'garage' || (screen === 'campaign' && journalReturnScreen === 'garage')
+    if (!inHangar || !garageLanded || departureStationId) return
     let previous = performance.now()
     const timer = window.setInterval(() => {
       const now = performance.now()
@@ -343,7 +380,7 @@ function App() {
       updateSavedProgress(current => regenerateHangarHull(current, seconds))
     }, 500)
     return () => window.clearInterval(timer)
-  }, [screen, garageLanded, departureStationId, updateSavedProgress])
+  }, [screen, journalReturnScreen, garageLanded, departureStationId, updateSavedProgress])
 
   const collectPlanet = useCallback((planetId: string) => {
     updateSavedProgress(current => {
@@ -355,8 +392,8 @@ function App() {
     })
   }, [updateSavedProgress])
 
-  const defeatDrone = useCallback((droneId: string) => {
-    updateSavedProgress(current => applyDroneLoot(current, droneId, rollDroneLoot()))
+  const defeatDrone = useCallback((droneId: string, respawnAt?: number) => {
+    updateSavedProgress(current => applyDroneLoot(current, droneId, rollDroneLoot(), respawnAt))
   }, [updateSavedProgress])
 
   const completeMission = useCallback((id: MissionId) => {
@@ -368,7 +405,7 @@ function App() {
   }, [updateSavedProgress])
 
   const beginDocking = useCallback((id: string) => {
-    if (!ORION_STATIONS.some(station => station.id === id)) return
+    if (!world.stations.some(station => station.id === id)) return
     setInventoryOpen(false)
     setStatisticsOpen(false)
     setPauseOpen(false)
@@ -384,7 +421,7 @@ function App() {
     void import('./game/renderer/GarageCanvas').then(module => {
       setGarageScene(() => module.GarageCanvas)
     })
-  }, [])
+  }, [world.stations])
 
   const finishDocking = useCallback((id: string) => {
     if (id === dockingStationId && garageReady) setScreen('garage')
@@ -392,9 +429,9 @@ function App() {
 
   const leaveGarage = useCallback(() => {
     if (!garageLanded || departureStationId) return
-    const station = ORION_STATIONS.find(site => site.id === dockingStationId)
+    const station = world.stations.find(site => site.id === dockingStationId)
     if (!station) return
-    updateSavedProgress(current => updateSectorPosition(current, ORION_SECTOR_ID, station.launchPosition.z, station.launchPosition.x, station.launchPosition.y))
+    updateSavedProgress(current => updateSectorPosition(current, world.galaxy.id, station.launchPosition.z, station.launchPosition.x, station.launchPosition.y))
     setInventoryOpen(false)
     setStatisticsOpen(false)
     shipTelemetryRef.current = null
@@ -402,7 +439,7 @@ function App() {
     setDepartureStationId(station.id)
     setCombatActive(false)
     setWorldSessionKey(key => key + 1)
-  }, [dockingStationId, garageLanded, departureStationId, updateSavedProgress])
+  }, [dockingStationId, garageLanded, departureStationId, updateSavedProgress, world])
 
   const finishDeparture = useCallback(() => {
     setDepartureStationId(null)
@@ -422,11 +459,31 @@ function App() {
     return () => window.removeEventListener('keydown', onEscape)
   }, [inventoryOpen, leaveGarage, screen])
 
-  const updateSectorPositionSaved = useCallback((position: SectorPosition) => {
+  const updateSectorPositionSaved = useCallback((position: SectorPosition, origin: GalaxyId) => {
     updateSavedProgress((current) => {
-      const next = updateSectorPosition(current, ORION_SECTOR_ID, position.z, position.x, position.y)
+      if (current.sectorId !== origin) return current
+      const next = updateSectorPosition(current, origin, position.z, position.x, position.y)
       return shipTelemetryRef.current ? updateShipVitals(next, shipTelemetryRef.current) : next
     })
+  }, [updateSavedProgress])
+
+  const showGalaxyChart = useCallback(() => {
+    setBoundaryCourse(false)
+    setGalaxyChartOpen(true)
+  }, [])
+
+  const finishGalaxyJump = useCallback((destination: GalaxyId, origin: GalaxyId) => {
+    const lastTelemetry = shipTelemetryRef.current
+    updateSavedProgress(current => {
+      if (current.sectorId !== origin || destination === origin) return current
+      const withVitals = lastTelemetry ? updateShipVitals(current, lastTelemetry) : current
+      return { ...updateSectorPosition(withVitals, destination, GALAXY_ARRIVAL.z, GALAXY_ARRIVAL.x, GALAXY_ARRIVAL.y), orbitPlanetId: null }
+    })
+    setTrackedStationId(null)
+    setJumpDestination(null)
+    setGalaxyChartOpen(false)
+    setCombatActive(false)
+    shipTelemetryRef.current = null
   }, [updateSavedProgress])
 
   const craftPart = () => {
@@ -707,10 +764,20 @@ function App() {
     brake: ui.brake,
     fire: ui.fire,
     dodge: ui.dodge,
+    lights: language === 'pl' ? 'Reflektory statku' : 'Ship headlights',
+    overdrive: language === 'pl' ? 'Przeciążenie napędu' : 'Drive overcharge',
   }
   const shipBonuses = getShipBonuses(progress)
 
   const renderScreen = () => {
+  if (screen === 'prologue') return <Suspense fallback={<div className="game-loading" role="status">{language === 'pl' ? 'Ładowanie powierzchni…' : 'Loading the surface…'}</div>}>
+    <ShipRecovery planet={world.planets[0]} language={language} repairMask={progress.repairMask} graphics={settings}
+      launching={prologueLaunching} worldReady={departureWorldReady} volume={settings.mainVolume}
+      onRepair={mask => updateSavedProgress(current => ({ ...current, repairMask: current.repairMask | mask }))}
+      onLaunch={() => { if (progress.repairMask !== 7) return; setDepartureWorldReady(false); setPrologueLaunching(true); setWorldSessionActive(true) }}
+      onFinished={() => { updateSavedProgress(current => ({ ...current, prologueComplete: true })); setScreen('exploration'); setPrologueLaunching(false) }}
+      onExit={exitGameplay} />
+  </Suspense>
   if (screen === 'exploration') {
     return (
       <>
@@ -740,13 +807,18 @@ function App() {
           <PilotInventory
             progress={progress}
             language={language}
+            quality={settings.graphicsQuality}
             canSell={false}
+            onOpenStatistics={showShipStatistics}
             onClose={() => setInventoryOpen(false)}
             onEquip={(partId) => updateSavedProgress((current) => equipShipPart(current, partId))}
             onUnequip={(slot) => updateSavedProgress((current) => unequipShipPart(current, slot))}
             onSell={sellPart}
           />
         )}
+        {merchantOpen && <MerchantPanel language={language} merchant={world.merchant} progress={progress} onClose={() => setMerchantOpen(false)} onTrade={updateSavedProgress} />}
+        {galaxyChartOpen && <GalaxyTravel language={language} origin={world.galaxy} jumpingTo={jumpDestination ? getGalaxy(jumpDestination) : null}
+          onClose={() => setGalaxyChartOpen(false)} onJump={setJumpDestination} />}
       </>
     )
   }
@@ -807,6 +879,7 @@ function App() {
               </select>
             </label>
             <p className="settings-hint">{ui.graphicsHint}</p>
+            <GraphicsOptions settings={settings} onChange={updateSettings} />
             <label className="volume-row" htmlFor="mouse-sensitivity">
               <span>{ui.mouseSensitivity}</span>
               <input
@@ -932,9 +1005,8 @@ function App() {
     const garageVitals = getShipVitals(progress)
     const garageMaximum = getMaximumShipVitals(progress.shieldLevel, shipBonuses)
     const ambientConversation = HANGAR_CONVERSATIONS[ambientLineIndex]
-    const slotLabels: Record<ShipPartSlot, string> = language === 'pl'
-      ? { weapon: 'Uzbrojenie', shield: 'Osłony', engine: 'Silnik' }
-      : { weapon: 'Weapons', shield: 'Shields', engine: 'Engine' }
+    const dock = world.stations.find(station => station.id === dockingStationId)
+    const slotLabels = Object.fromEntries(SHIP_PART_SLOTS.map(slot => [slot, getShipPartSlotLabel(language, slot)]))
     const rarityLabels = {
       standard: ui.rarityStandard,
       refined: ui.rarityRefined,
@@ -958,10 +1030,12 @@ function App() {
             )
           })}
         </div>
+        <HangarCrewPanel language={language} />
         <header className="garage-toolbar">
           <div>
-            <span>{language === 'pl' ? 'HANGAR STACJI ORBITALNEJ' : 'ORBITAL STATION HANGAR'}</span>
-            <strong>{ORION_STATIONS.find(station => station.id === dockingStationId)?.name[language]}</strong>
+            <span>{dock?.planetId ? (language === 'pl' ? 'HANGAR PLANETARNY' : 'PLANETARY HANGAR')
+              : (language === 'pl' ? 'HANGAR STACJI ORBITALNEJ' : 'ORBITAL STATION HANGAR')}</span>
+            <strong>{dock?.name[language]}</strong>
           </div>
           <div className="garage-toolbar-actions">
             <button
@@ -1003,7 +1077,7 @@ function App() {
             aria-label={ui.garageTitle}
           >
           <div className="garage-interface-heading">
-            <p className="eyebrow">{copy.eyebrow}</p>
+            <p className="eyebrow">{world.galaxy.name}</p>
             <h1>{ui.garageTitle}</h1>
             <p>{language === 'pl' ? 'Załoga stacji naprawia i ulepsza statki. Przygotuj wyposażenie przed powrotem w głęboką przestrzeń.' : 'The station crew repairs and upgrades ships. Prepare your equipment before returning to deep space.'}</p>
             <div className="garage-balance">
@@ -1014,7 +1088,7 @@ function App() {
 
           <section className="garage-slots" aria-labelledby="garage-slots-title">
             <h2 id="garage-slots-title">{ui.garageSlots}</h2>
-            {(['weapon', 'shield', 'engine'] as const).map((slot) => {
+            {SHIP_PART_SLOTS.map((slot) => {
               const part = progress.shipParts.find((item) => item.id === progress.equippedParts[slot])
               return (
                 <article className={`garage-slot${part ? ` rarity-${part.rarity}` : ' empty'}`} key={slot}>
@@ -1156,7 +1230,9 @@ function App() {
           <PilotInventory
             progress={progress}
             language={language}
+            quality={settings.graphicsQuality}
             canSell
+            onOpenStatistics={showShipStatistics}
             onClose={() => setInventoryOpen(false)}
             onEquip={(partId) => updateSavedProgress((current) => equipShipPart(current, partId))}
             onUnequip={(slot) => updateSavedProgress((current) => unequipShipPart(current, slot))}
@@ -1243,22 +1319,30 @@ function App() {
     )
   }
 
-  return <NavigationJournal language={language} progress={progress} activeMission={activeMission} trackedStationId={trackedStationId}
+  return <NavigationJournal language={language} progress={progress} world={world} activeMission={activeMission} trackedStationId={trackedStationId}
     onClose={() => setScreen(journalReturnScreen)}
     onTrackMission={id => { setTrackedStationId(null); setTrackedMissionId(id) }}
-    onTrackStation={setTrackedStationId} />
+    onTrackStation={setTrackedStationId}
+    onBoundaryCourse={journalReturnScreen === 'exploration' && !combatActive && !world.planets.some(planet => planet.id === progress.orbitPlanetId && planet.orbitalFaction)
+      ? () => { setBoundaryCourse(true); setScreen('exploration') } : undefined} />
   }
 
   const worldMounted = worldSessionActive && screen !== 'title' && screen !== 'quit' && (screen !== 'garage' || departureStationId !== null) && !(screen === 'campaign' && journalReturnScreen === 'garage')
   return <>
     {worldMounted && <div className="persistent-world-layer" style={{ visibility: screen === 'exploration' ? 'visible' : 'hidden' }} aria-hidden={screen !== 'exploration'}>
       <Suspense fallback={<div className="game-loading" role="status">{language === 'pl' ? 'Ładowanie galaktyki…' : 'Loading galaxy…'}</div>}>
-        <SectorCanvas key={worldSessionKey}
-          language={language} graphicsQuality={settings.graphicsQuality} controls={settings.controls}
+        <SectorCanvas key={`${world.galaxy.id}:${worldSessionKey}`} world={world}
+          language={language} graphics={settings} controls={settings.controls}
+          shipLights={settings.shipLights} onToggleLights={() => updateSettings({ shipLights: !settings.shipLights })}
           mouseSensitivity={settings.mouseSensitivity} mainVolume={settings.mainVolume} shotsVolume={settings.shotsVolume} musicVolume={settings.musicVolume}
           shipBonuses={shipBonuses} equippedPartRarities={equippedPartRarities} progress={progress} activeMission={activeMission} trackedStationId={trackedStationId}
-          paused={screen !== 'exploration' || inventoryOpen || statisticsOpen || pauseOpen || pauseSettingsOpen} renderActive={screen === 'exploration' && !statisticsOpen}
-          onPlanetScan={collectPlanet} onDroneDefeated={defeatDrone} onSectorPositionChange={updateSectorPositionSaved}
+          paused={screen !== 'exploration' || inventoryOpen || statisticsOpen || pauseOpen || pauseSettingsOpen || merchantOpen || galaxyChartOpen}
+          renderActive={screen === 'exploration' && !statisticsOpen && !inventoryOpen} boundaryCourse={boundaryCourse} jumpDestination={jumpDestination}
+          onBoundaryCourseFailure={() => setBoundaryCourse(false)} onOpenGalaxyChart={showGalaxyChart}
+          onJumpComplete={finishGalaxyJump} onOpenMerchant={() => setMerchantOpen(true)}
+          onPlanetScan={collectPlanet} onDroneDefeated={defeatDrone}
+          onDroneRespawn={id => updateSavedProgress(current => restoreDroneSpawn(current, id))}
+          onOrbitChange={id => updateSavedProgress(current => ({ ...current, orbitPlanetId: id }))} onSectorPositionChange={updateSectorPositionSaved}
           onMissionComplete={completeMission} onMissionObjectiveProgress={updateMissionObjective}
           onTrackStation={setTrackedStationId}
           onShipStatusChange={updateShipTelemetry}
@@ -1268,12 +1352,16 @@ function App() {
       </Suspense>
     </div>}
     {dockingStationId && <div className={screen === 'garage' ? 'persistent-garage-layer visible' : 'persistent-garage-layer'} aria-hidden={screen !== 'garage'}>
-      {GarageScene && <GarageScene key={dockingStationId} equippedPartRarities={equippedPartRarities} entering={screen === 'garage'} paused={statisticsOpen || inventoryOpen}
+      {GarageScene && <GarageScene key={dockingStationId} graphics={settings} previewPlanet={world.planets[0]} equippedPartRarities={equippedPartRarities}
+        surfacePlanet={world.planets.find(planet => planet.id === world.stations.find(site => site.id === dockingStationId)?.planetId)}
+        entering={screen === 'garage'} paused={statisticsOpen || inventoryOpen}
         departing={departureStationId !== null} departureReady={departureWorldReady} onDeparted={() => setScreen('exploration')}
         onReady={() => setGarageReady(true)} onLandingStageChange={setGarageLandingStage} onLanded={() => { setGarageLanded(true); applicationAudio.current?.playUiSound('dock') }} />}
     </div>}
-    <div className={screen === 'exploration' || screen === 'garage' ? 'app-screen-overlay app-screen-flight' : 'app-screen-overlay'}>{renderScreen()}</div>
-    {statisticsOpen && <ShipStatisticsPanel progress={progress} telemetry={statisticsTelemetry} language={language} quality={settings.graphicsQuality} onClose={() => setStatisticsOpen(false)} />}
+    <div className={`app-screen-overlay${screen === 'campaign' ? ' app-screen-journal' : screen === 'exploration' || screen === 'garage' ? ' app-screen-flight' : ''}`}>{renderScreen()}</div>
+    {statisticsOpen && <ShipStatisticsPanel progress={progress} telemetry={statisticsTelemetry} language={language} quality={settings.graphicsQuality}
+      onClose={() => setStatisticsOpen(false)} onLearn={skill => updateSavedProgress(current => learnPilotSkill(current, skill))}
+      onOpenInventory={combatActive || screen === 'campaign' ? undefined : () => { setStatisticsOpen(false); setInventoryOpen(true) }} />}
   </>
 }
 

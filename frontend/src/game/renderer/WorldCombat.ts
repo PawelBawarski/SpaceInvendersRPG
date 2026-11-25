@@ -1,14 +1,17 @@
+import { buildPlanetDefenders } from '../domain/planetOrbit'
+import { remainingRespawnSeconds, ROAMING_RESPAWN_SECONDS } from '../domain/enemyRespawn'
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from '@babylonjs/core'
-import { FACTIONS, ORION_DRONES, ORION_PLANETS, SHIP_ARCHETYPES, type DroneSite, type FactionId, type ShipArchetype } from '../domain/exploration'
+import { FACTIONS, ORION_DRONES, ORION_PLANETS, ORION_SECTOR_ID, SHIP_ARCHETYPES, type DroneSite, type FactionId, type GalaxyWorld, type ShipArchetype } from '../domain/exploration'
 import { resolveBossDamage } from '../domain/combat'
 import { getSignalPulseState } from '../domain/signalPulse'
 import { applyArmorDamage, PLAYER_WEAPON, resolveWeaponHit } from '../domain/weapon'
 import { buildMissionHostiles, isMissionComplete, MISSIONS, type MissionDefinition, type MissionId } from '../missions/definitions'
 import type { MissionProgress } from '../progress/missionProgress'
 import type { ShipPartBonuses, ShipPartRarity } from '../progress/shipParts'
-import { createImpactEffect } from './ImpactEffect'
+import type { CombatImpactKind } from './CombatImpacts'
 import { createDamageNumber, type FloatingDamageNumber } from './DamageNumber'
-import { createFactionShipVisual, createWorldBossVisual } from './WorldFleetVisual'
+import { createFleetModelLibrary } from './WorldFleetVisual'
+import { createSceneMaterial } from './sectorDepth'
 import { segmentSphereContact } from './worldCombatMath'
 import { segmentBoundsOverlapSphere } from './collisionBroadphase'
 import { BOSS_VISUAL_SCALE, ENEMY_VISUAL_SCALE } from '../domain/enemyScale'
@@ -16,6 +19,8 @@ import type { DamageSource } from '../domain/damageFeedback'
 import { getEnemyIdentity } from '../domain/enemyIdentity'
 import { sampleFormationPosition, samplePatrolRoute, type PatrolFormation } from '../domain/patrolFormation'
 import { SpatialIndex } from '../simulation/SpatialIndex'
+import { ENEMY_SHIELD_DELAY, getEnemyManeuver, getEnemyShieldCapacity, getShipContactDamage, PLAYER_CONTACT_RADIUS, SHIP_CONTACT_COOLDOWN } from '../domain/enemyManeuvers'
+import type { RadarTarget } from '../domain/flightRadar'
 
 export interface EnemyNameplateTarget {
   id: string
@@ -24,6 +29,11 @@ export interface EnemyNameplateTarget {
   level: number
   boss: boolean
   hitRadius: number
+  health: number
+  maxHealth: number
+  shield: number
+  maxShield: number
+  hitFlash: number
 }
 
 interface PatrolGroup {
@@ -51,8 +61,10 @@ interface Actor extends EnemyNameplateTarget {
   defeated: boolean
   fireClock: number
   respawn: number
-  sequence: number
   hitRadius: number
+  lastHitAt: number
+  lastContactAt: number
+  maneuverPhase: number
   formationTarget: Vector3 | null
 }
 
@@ -76,7 +88,7 @@ interface Pickup {
 
 export interface WorldCombatStatus {
   mission: MissionDefinition | null
-  boss: { health: number; maximumHealth: number; shield: number; maximumShield: number } | null
+  boss: { health: number; maximumHealth: number; shield: number; maximumShield: number; charging: boolean } | null
   completedObjectives: number
   requiredObjectives: number
   engaged: boolean
@@ -89,12 +101,14 @@ export interface WorldCombatStatus {
 interface CombatCallbacks {
   getProgress: () => MissionProgress
   onPlayerHit: (amount: number, source?: DamageSource) => void
-  onEnemyDefeated: (id: string) => void
+  onEnemyDefeated: (id: string, respawnAt?: number) => void
+  onEnemyRespawn?: (id: string) => void
   onMissionComplete: (id: MissionId) => void
   onMissionProgress: (id: MissionId, count: number) => void
   onMessage: (polish: string, english: string) => void
   onShot: () => void
-  onImpact: () => void
+  onImpact: (position: Vector3, normal: Vector3, scale: number, kind: CombatImpactKind) => void
+  onPlayerContact?: (safePosition: Vector3) => void
   damageNumbers: FloatingDamageNumber[]
 }
 
@@ -113,15 +127,19 @@ const RENDER_DISTANCE = 3200
 const ACTIVE_ENEMY_LIMIT = 96
 const MAX_IDLE_BOLT_MESHES = 48
 
-export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
+export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, world?: GalaxyWorld) {
+  const missions = !world || world.galaxy.id === ORION_SECTOR_ID ? MISSIONS : []
+  const planetSites = world?.planets ?? ORION_PLANETS
   const initial = callbacks.getProgress()
-  const finished = new Set<MissionId>(MISSIONS.filter(mission => isMissionComplete(initial, mission.id)).map(mission => mission.id))
-  const counts = new Map<MissionId, number>(MISSIONS.map(mission => [mission.id, initial.missionObjectiveProgress?.[mission.id] ?? 0]))
+  const finished = new Set<MissionId>(missions.filter(mission => isMissionComplete(initial, mission.id)).map(mission => mission.id))
+  const counts = new Map<MissionId, number>(missions.map(mission => [mission.id, initial.missionObjectiveProgress?.[mission.id] ?? 0]))
   const defeated = new Set(initial.defeatedDrones)
   const actors: Actor[] = []
   const actorIds = new Set<string>()
+  const orbitalFleets = new Map<string, Actor[]>()
   const spatial = new SpatialIndex<Actor>(4000, actor => actor.position)
   const cachedVisuals = new Set<Actor>()
+  const fleetModels = createFleetModelLibrary(scene)
   const awake = new Set<Actor>()
   let awakeGroups = new Set<PatrolGroup>()
   let formationClock = 1
@@ -131,16 +149,20 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
   const bolts: Bolt[] = []
   const activeActors: Actor[] = []
   const groups = new Map<string, PatrolGroup>()
+  const actorsByMission = new Map<MissionId, Actor[]>()
   const formationTravel = new Vector3()
-  const planets = ORION_PLANETS.map(site => ({ center: new Vector3(site.x, site.y, site.z), radius: site.radius }))
-  const missionPositions = new Map(MISSIONS.map(mission => [mission.id, new Vector3(mission.worldPosition.x, mission.worldPosition.y, mission.worldPosition.z)]))
+  const planets = planetSites.map(site => ({ center: new Vector3(site.x, site.y, site.z), radius: site.radius }))
+  const missionPositions = new Map(missions.map(mission => [mission.id, new Vector3(mission.worldPosition.x, mission.worldPosition.y, mission.worldPosition.z)]))
   const zero = Vector3.Zero()
   const previousBoltPosition = new Vector3()
   const relativeFrom = new Vector3()
   const relativeTo = new Vector3()
   const travel = new Vector3()
   const originOffset = new Vector3()
-  const factionColors = new Map(Object.entries(FACTIONS).map(([id, faction]) => [id as FactionId, Color3.FromHexString(faction.accent)]))
+  const steering = new Vector3()
+  const previousQueryPosition = new Vector3()
+  let selection: Actor[] = []
+  let queryClock = Infinity
   const playerBoltPool: Mesh[] = []
   const hostileBoltPool: Mesh[] = []
   const templates = [false, true].map(hostile => {
@@ -157,18 +179,17 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
   let boltPlanetExactChecks = 0
   let boltActorBoundsChecks = 0
   let boltActorExactChecks = 0
-  const session = Date.now().toString(36)
-  const shotMaterial = new StandardMaterial('worldPlayerShotMaterial', scene)
+  const shotMaterial = createSceneMaterial('worldPlayerShotMaterial', scene)
   shotMaterial.disableLighting = true
   shotMaterial.emissiveColor = new Color3(1, 0.68, 0.28)
   const hostileMaterials = new Map<FactionId, StandardMaterial>()
   for (const faction of Object.keys(FACTIONS) as FactionId[]) {
-    const material = new StandardMaterial(`worldHostileShot-${faction}`, scene)
+    const material = createSceneMaterial(`worldHostileShot-${faction}`, scene)
     material.disableLighting = true
     material.emissiveColor = Color3.FromHexString(FACTIONS[faction].accent).scale(1.1)
     hostileMaterials.set(faction, material)
   }
-  const pickupMaterial = new StandardMaterial('worldRelayPickupMaterial', scene)
+  const pickupMaterial = createSceneMaterial('worldRelayPickupMaterial', scene)
   pickupMaterial.diffuseColor = new Color3(0.15, 0.35, 0.42)
   pickupMaterial.emissiveColor = new Color3(0.08, 0.55, 0.72)
   let elapsed = 0
@@ -194,18 +215,21 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
     actorIds.add(site.id)
     const position = new Vector3(site.x, site.y, site.z)
     const archetype = site.archetype ?? 'scout'
+    const faction = site.faction ?? mission?.faction ?? 'meridian'
+    const shield = getEnemyShieldCapacity(archetype, faction, site.health)
     const actor: Actor = {
       id: site.id, position, previousPosition: position.clone(), origin: position.clone(), root: null, site, mission,
-      faction: site.faction ?? mission?.faction ?? 'meridian', archetype,
-      ...getEnemyIdentity(site.faction ?? mission?.faction ?? 'meridian', archetype, site.health, 0, site.damage ?? SHIP_ARCHETYPES[archetype].damage),
-      health: site.health, maxHealth: site.health, shield: 0, maxShield: 0,
-      defeated: mission !== null && (finished.has(mission.id) || defeated.has(site.id)),
-      fireClock: 0.5 + actors.length % 5 * 0.2, respawn: 0, sequence: 0,
-      hitRadius: (archetype === 'frigate' ? 3.7 : archetype === 'bomber' ? 2.2 : 1.65) * ENEMY_VISUAL_SCALE,
+      faction, archetype,
+      ...getEnemyIdentity(faction, archetype, site.health, shield, site.damage ?? SHIP_ARCHETYPES[archetype].damage),
+      health: site.health, maxHealth: site.health, shield, maxShield: shield, hitFlash: 0,
+      lastHitAt: -Infinity, lastContactAt: -Infinity, maneuverPhase: (actors.length % 29) * .61,
+      defeated: mission ? finished.has(mission.id) || defeated.has(site.id) : initial.droneRespawns[site.id] !== undefined,
+      fireClock: 0.5 + actors.length % 5 * 0.2, respawn: remainingRespawnSeconds(initial.droneRespawns[site.id]),
+      hitRadius: (archetype === 'frigate' ? 3.7 : archetype === 'bomber' ? 2.2 : archetype === 'interceptor' ? 2.23 : 1.65) * ENEMY_VISUAL_SCALE,
       formationTarget: site.formation ? position.clone() : null,
     }
     actors.push(actor)
-    if (!actor.defeated) spatial.update(actor)
+    if (!actor.defeated || !mission) spatial.update(actor)
     if (site.formation) {
       let group = groups.get(site.formation.id)
       if (!group) {
@@ -216,8 +240,8 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
     }
   }
 
-  for (const site of ORION_DRONES) if (!site.missionId) addShip(site, null)
-  for (const mission of MISSIONS) {
+  for (const site of world?.drones ?? ORION_DRONES) if (!site.missionId) addShip(site, null)
+  for (const mission of missions) {
     if (mission.bossProfile) {
       const position = new Vector3(mission.worldPosition.x, mission.worldPosition.y, mission.worldPosition.z)
       actors.push({
@@ -226,8 +250,8 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
         ...getEnemyIdentity(mission.faction, 'frigate', mission.bossProfile.health, mission.bossProfile.shield, mission.bossProfile.damage, mission.id),
         maxHealth: mission.bossProfile.health, shield: mission.bossProfile.shield,
         maxShield: mission.bossProfile.shield, defeated: finished.has(mission.id), fireClock: 1.8,
-        respawn: 0, sequence: 0, hitRadius: (mission.id === 'null-choir' ? 7.2 : 6) * BOSS_VISUAL_SCALE,
-        formationTarget: null,
+        respawn: 0, hitRadius: (mission.id === 'null-choir' ? 7.2 : 6) * BOSS_VISUAL_SCALE,
+        formationTarget: null, hitFlash: 0, lastHitAt: -Infinity, lastContactAt: -Infinity, maneuverPhase: 0,
       })
       if (!actors.at(-1)!.defeated) spatial.update(actors.at(-1)!)
     }
@@ -242,6 +266,22 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
       }
     }
   }
+  for (const actor of actors) {
+    if (!actor.mission) continue
+    const group = actorsByMission.get(actor.mission.id) ?? []
+    group.push(actor)
+    actorsByMission.set(actor.mission.id, group)
+  }
+
+  const enterPlanetOrbit = (id: string) => {
+    if (orbitalFleets.has(id)) return
+    const planet = planetSites.find(site => site.id === id)
+    if (!planet?.orbitalFaction) return
+    const start = actors.length
+    for (const site of buildPlanetDefenders(planet)) addShip(site, null)
+    orbitalFleets.set(id, actors.slice(start))
+  }
+  if (initial.orbitPlanetId) enterPlanetOrbit(initial.orbitPlanetId)
 
   const complete = (mission: MissionDefinition) => {
     if (finished.has(mission.id)) return
@@ -261,14 +301,66 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
   const destroyActor = (actor: Actor) => {
     actor.defeated = true
     actor.root?.setEnabled(false)
-    actor.respawn = actor.mission ? Infinity : elapsed + 28
+    actor.respawn = actor.mission ? Infinity : elapsed + ROAMING_RESPAWN_SECONDS
     if (actor.mission) spatial.remove(actor)
-    actor.sequence += 1
-    callbacks.onEnemyDefeated(actor.mission ? actor.id : `${actor.id}-${session}-${actor.sequence}`)
+    if (actor.mission) callbacks.onEnemyDefeated(actor.id)
+    else callbacks.onEnemyDefeated(actor.id, Date.now() + ROAMING_RESPAWN_SECONDS * 1000)
     if (actor.mission) {
       if (!actor.site && actor.mission.bossProfile) complete(actor.mission)
       else if (!finished.has(actor.mission.id)) advanceObjective(actor.mission)
     }
+  }
+
+  const damageActor = (actor: Actor, amount: number, point: Vector3, normal: Vector3, critical = false, collision = false) => {
+    const blocked = !actor.site && actor.mission?.objective === 'disable-signal' && !getSignalPulseState(elapsed).open
+    const shielded = blocked || actor.shield > 0
+    const kind = collision ? 'collision' : shielded ? 'shield' : 'armor'
+    callbacks.onImpact(point, normal, Math.min(11, 1.2 + actor.hitRadius * .11), kind)
+    actor.hitFlash = .32
+    actor.lastHitAt = elapsed
+    if (blocked) return
+    const before = actor.health + actor.shield
+    const vitals = resolveBossDamage({ health: actor.health, shield: actor.shield, amount })
+    actor.health = vitals.health
+    actor.shield = vitals.shield
+    callbacks.damageNumbers.push(createDamageNumber(scene, point, before - actor.health - actor.shield, critical))
+    if (actor.health <= 0) destroyActor(actor)
+  }
+
+  const handlePlayerContact = (input: WorldCombatInput, dt: number) => {
+    let first = Infinity
+    let target: Actor | null = null
+    for (const actor of activeActors) {
+      if (actor.defeated) continue
+      const radius = actor.hitRadius + PLAYER_CONTACT_RADIUS
+      input.previousPosition.subtractToRef(actor.previousPosition, relativeFrom)
+      input.position.subtractToRef(actor.position, relativeTo)
+      if (!segmentBoundsOverlapSphere(relativeFrom, relativeTo, zero, radius)) continue
+      const contact = relativeFrom.lengthSquared() < radius ** 2 ? 0 : segmentSphereContact(relativeFrom, relativeTo, zero, radius)
+      if (contact !== null && contact < first) { first = contact; target = actor }
+    }
+    if (!target) return
+    const playerCenter = Vector3.Lerp(input.previousPosition, input.position, first)
+    const enemyCenter = Vector3.Lerp(target.previousPosition, target.position, first)
+    const normal = playerCenter.subtract(enemyCenter)
+    if (normal.lengthSquared() < .01) normal.copyFrom(input.forward).negateInPlace()
+    normal.normalize()
+    if (elapsed - target.lastContactAt >= SHIP_CONTACT_COOLDOWN) {
+      target.lastContactAt = elapsed
+      const relativeSpeed = input.position.subtract(input.previousPosition)
+        .subtractInPlace(target.position.subtract(target.previousPosition)).length() / Math.max(dt, .001)
+      const damage = getShipContactDamage(relativeSpeed, target.archetype, target.boss)
+      const playerImpact = playerCenter.subtract(normal.scale(PLAYER_CONTACT_RADIUS * .82))
+      callbacks.onPlayerHit(damage.player, {
+        position: enemyCenter, label: target.name, kind: 'collision', impact: { position: playerImpact, normal: normal.negate() },
+      })
+      if (!target.boss) {
+        const hitPoint = enemyCenter.add(normal.scale(target.hitRadius))
+        damageActor(target, damage.enemy, hitPoint, normal, false, true)
+        target.position.subtractInPlace(normal.scale(Math.min(5, relativeSpeed * .02)))
+      }
+    }
+    callbacks.onPlayerContact?.(target.position.add(normal.scale(target.hitRadius + PLAYER_CONTACT_RADIUS + .65)))
   }
 
   const spawnBolt = (position: Vector3, direction: Vector3, velocity: Vector3, damage: number, critical: boolean, faction: FactionId | null, source?: DamageSource) => {
@@ -301,10 +393,10 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
     let bestScore = Infinity
     for (const actor of activeActors) {
       if (actor.defeated) continue
-      const difference = actor.position.subtract(input.position)
-      const distance = difference.length()
+      actor.position.subtractToRef(input.position, formationTravel)
+      const distance = formationTravel.length()
       if (distance > 580 || distance < 0.001) continue
-      const alignment = Vector3.Dot(difference.scale(1 / distance), input.forward)
+      const alignment = Vector3.Dot(formationTravel, input.forward) / distance
       if (alignment < 0.93) continue
       const score = distance + (1 - alignment) * 700
       if (score < bestScore) { best = actor; bestScore = score }
@@ -317,7 +409,18 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
 
   return {
     getStatus(): WorldCombatStatus { return latestStatus },
+    enterPlanetOrbit(id: string) { enterPlanetOrbit(id); streaming.totalActors = actors.length },
+    getPlanetOrbitStatus(id: string) {
+      const fleet = orbitalFleets.get(id) ?? []
+      return { total: fleet.length, remaining: fleet.filter(actor => !actor.defeated).length }
+    },
     getNameplateTargets(): readonly EnemyNameplateTarget[] { return activeActors.filter(actor => !actor.defeated) },
+    getRadarTargets(position: Vector3, range: number): RadarTarget[] {
+      return spatial.query(position, range).filter(actor => !actor.defeated)
+        .sort((a, b) => Number(b.boss) - Number(a.boss) || Vector3.DistanceSquared(a.position, position) - Vector3.DistanceSquared(b.position, position))
+        .slice(0, 26)
+        .map(actor => ({ id: actor.id, kind: actor.boss ? 'boss' : 'hostile', x: actor.position.x, y: actor.position.y, z: actor.position.z }))
+    },
 
     getPerformanceStats() {
       return { totalActors: actors.length, totalPlanets: planets.length, activeActors: activeActors.length, actorCandidates: candidateCount, activeLimit: ACTIVE_ENEMY_LIMIT, cachedVisuals: cachedVisuals.size, patrolGroups: groups.size,
@@ -331,8 +434,8 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
       if (pickup) return pickup.position
       let closest: Actor | null = null
       let distance = Infinity
-      for (const actor of actors) {
-        if (actor.defeated || actor.mission?.id !== missionId) continue
+      for (const actor of actorsByMission.get(missionId) ?? []) {
+        if (actor.defeated) continue
         if (!actor.site) return actor.position
         const candidateDistance = Vector3.DistanceSquared(position, actor.position)
         if (candidateDistance < distance) { closest = actor; distance = candidateDistance }
@@ -346,17 +449,19 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
       boltPlanetBoundsChecks = boltPlanetExactChecks = boltActorBoundsChecks = boltActorExactChecks = 0
       elapsed += dt
       formationClock += dt
+      queryClock += dt
       visualCleanupClock += dt
       playerFireClock = Math.max(0, playerFireClock - dt)
-      for (const mission of MISSIONS) {
-        if (isMissionComplete(callbacks.getProgress(), mission.id)) finished.add(mission.id)
+      const progress = callbacks.getProgress()
+      for (const mission of missions) {
+        if (isMissionComplete(progress, mission.id)) finished.add(mission.id)
       }
       let closest: Actor | null = null
       let closestDistance = Infinity
       let boss: Actor | null = null
       let encounter: MissionDefinition | null = null
       let encounterDistance = Infinity
-      for (const mission of MISSIONS) {
+      for (const mission of missions) {
         if (finished.has(mission.id)) continue
         const distance = Vector3.Distance(input.position, missionPositions.get(mission.id)!)
         const activationRadius = mission.bossProfile ? Math.max(650, mission.activationRadius) : mission.activationRadius
@@ -368,10 +473,17 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
         for (const group of groups.values()) if (!awakeGroups.has(group)) syncFormation(group)
       }
       for (const group of awakeGroups) syncFormation(group)
-      const candidates = spatial.query(input.position, RENDER_DISTANCE + 250)
-      candidateCount = candidates.length
-      candidates.sort((a, b) => Number(!b.site) - Number(!a.site) || Vector3.DistanceSquared(input.position, a.position) - Vector3.DistanceSquared(input.position, b.position))
-      const selected = candidates.slice(0, ACTIVE_ENEMY_LIMIT)
+      if (queryClock >= .15 || Vector3.DistanceSquared(input.position, previousQueryPosition) > 45 ** 2) {
+        queryClock = 0
+        previousQueryPosition.copyFrom(input.position)
+        const candidates = spatial.query(input.position, RENDER_DISTANCE + 250)
+        candidateCount = candidates.length
+        candidates.sort((a, b) => Number(!b.site) - Number(!a.site) || Vector3.DistanceSquared(input.position, a.position) - Vector3.DistanceSquared(input.position, b.position))
+        selection = candidates.slice(0, ACTIVE_ENEMY_LIMIT)
+      }
+      const selected = selection
+      const nearbyPlanets = planets.filter(planet => Vector3.DistanceSquared(input.position, planet.center)
+        <= (planet.radius + RENDER_DISTANCE + 300) ** 2)
       const selectedSet = new Set(selected)
       for (const actor of previouslyActive) if (!selectedSet.has(actor)) actor.root?.setEnabled(false)
       const nearbyGroups = new Set<PatrolGroup>()
@@ -394,7 +506,12 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           if (!actor.mission) {
             if (elapsed >= actor.respawn) {
               actor.defeated = false
+              callbacks.onEnemyRespawn?.(actor.id)
               actor.health = actor.maxHealth
+              actor.shield = actor.maxShield
+              actor.hitFlash = 0
+              actor.lastHitAt = -Infinity
+              actor.lastContactAt = -Infinity
               actor.position.copyFrom(actor.formationTarget ?? actor.origin)
               spatial.update(actor)
             }
@@ -405,19 +522,21 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
         const distance = Vector3.Distance(input.position, actor.position)
         if (distance > RENDER_DISTANCE) {
           actor.root?.setEnabled(false)
-          if (distance > RENDER_DISTANCE * 3 && actor.root) { actor.root.dispose(false, true); actor.root = null }
           continue
         }
         if (!actor.root) {
-          actor.root = actor.site
-            ? createFactionShipVisual(scene, actor.id, actor.faction, actor.archetype)
-            : createWorldBossVisual(scene, actor.id, actor.faction, actor.mission?.id === 'null-choir' || actor.maxHealth >= 700)
+          actor.root = fleetModels.create(actor.id, actor.faction, actor.archetype, actor.boss,
+            actor.mission?.id === 'null-choir' || actor.maxHealth >= 700)
           actor.root.metadata = { worldEnemyId: actor.id, faction: actor.faction, archetype: actor.archetype, missionId: actor.mission?.id, hitRadius: actor.hitRadius, enemyName: actor.name, enemyLevel: actor.level, formationId: actor.site?.formation?.id, formationSlot: actor.site?.formation?.slot }
           cachedVisuals.add(actor)
         }
         actor.root.setEnabled(true)
         activeActors.push(actor)
         awake.add(actor)
+        actor.hitFlash = Math.max(0, .32 - (elapsed - actor.lastHitAt))
+        if (actor.site && actor.shield < actor.maxShield && elapsed - actor.lastHitAt >= ENEMY_SHIELD_DELAY) {
+          actor.shield = Math.min(actor.maxShield, actor.shield + actor.maxShield * .15 * dt)
+        }
         const base = SHIP_ARCHETYPES[actor.archetype]
         const attackRange = actor.site?.attackRange ?? Math.max(650, actor.mission?.activationRadius ?? 650)
         if (group && actor.formationTarget && !group.alerted) {
@@ -427,15 +546,36 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           if (travelDistance <= step) actor.position.copyFrom(actor.formationTarget)
           else actor.position.addInPlace(formationTravel.scaleInPlace(step / travelDistance))
         } else if (actor.site && (group?.alerted || distance < attackRange * 1.5)) {
-          if (distance > Math.max(30, actor.hitRadius + 8)) {
-            const step = input.position.subtract(actor.position).normalize().scale((actor.site.speed ?? base.speed) * dt)
-            if (Vector3.Distance(actor.position.add(step), group?.center ?? actor.origin) < (group ? 500 : actor.mission ? 350 : 220)) actor.position.addInPlace(step)
-          }
+          input.position.subtractToRef(actor.position, steering)
+          steering.normalize()
+          const move = getEnemyManeuver(actor.archetype, distance, attackRange, elapsed + actor.maneuverPhase, actor.hitFlash > 0)
+          formationTravel.set(
+            steering.x * move.advance + steering.z * move.strafe,
+            steering.y * move.advance + move.lift,
+            steering.z * move.advance - steering.x * move.strafe,
+          )
+          if (formationTravel.lengthSquared() > 1) formationTravel.normalize()
+          formationTravel.scaleInPlace((actor.site.speed ?? base.speed) * dt)
+          const anchor = group?.center ?? actor.origin
+          const limit = group ? 540 : actor.mission ? 360 : 260
+          if (Vector3.DistanceSquared(actor.position, anchor) < limit ** 2) actor.position.addInPlace(formationTravel)
+          else Vector3.LerpToRef(actor.position, anchor, Math.min(1, dt * .14), actor.position)
+          actor.root.rotation.z = move.strafe * .27
+        } else if (!actor.site && actor.mission?.objective !== 'disable-signal' && distance < attackRange) {
+          const enraged = actor.health < actor.maxHealth * .45
+          const hovering = enraged ? 44 : 24
+          formationTravel.set(
+            actor.origin.x + Math.sin(elapsed * (enraged ? .67 : .37)) * hovering,
+            actor.origin.y + Math.sin(elapsed * .64) * (enraged ? 21 : 9),
+            actor.origin.z + Math.cos(elapsed * .31) * (enraged ? 27 : 13),
+          )
+          Vector3.LerpToRef(actor.position, formationTravel, Math.min(1, dt * .65), actor.position)
         } else {
           const patrol = actor.origin.add(new Vector3(Math.sin(elapsed * 0.55 + actor.origin.z) * (actor.site ? 4 : 8), Math.cos(elapsed * 0.4 + actor.origin.x) * (actor.site ? 2 : 3), 0))
           Vector3.LerpToRef(actor.position, patrol, Math.min(1, dt * 0.8), actor.position)
+          actor.root.rotation.z *= Math.max(0, 1 - dt * 3)
         }
-        for (const planet of planets) {
+        for (const planet of nearbyPlanets) {
           const center = planet.center
           const minimumRadius = planet.radius + actor.hitRadius + 12
           let dx = actor.position.x - center.x
@@ -471,13 +611,24 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
         const amount = actor.site?.damage ?? profile?.damage ?? base.damage
         const lead = input.velocity.scale(Math.min(0.65, distance / Math.max(1, speed)))
         const direction = input.position.add(lead).subtract(actor.position).normalize()
-        const pattern = profile?.pattern ?? (actor.archetype === 'frigate' ? 'fan' : 'aimed')
+        const pattern = profile?.pattern ?? (actor.archetype === 'frigate' ? 'fan' : actor.archetype === 'bomber' ? 'burst' : 'aimed')
         const shots = pattern === 'fan' ? 3 : pattern === 'burst' ? 2 : pattern === 'spiral' ? 5 : 1
+        const right = new Vector3(direction.z, 0, -direction.x)
+        if (right.lengthSquared() < .001) right.set(1, 0, 0)
+        right.normalize()
+        const up = Vector3.Cross(direction, right)
         for (let shot = 0; shot < shots; shot += 1) {
-          const spread = pattern === 'spiral' ? (shot - 2) * 0.12 + Math.sin(elapsed) * 0.15 : (shot - (shots - 1) / 2) * 0.11
-          const velocityDirection = new Vector3(direction.x + spread, direction.y + (pattern === 'spiral' ? Math.cos(shot + elapsed) * 0.08 : 0), direction.z).normalize()
+          const offset = shot - (shots - 1) / 2
+          let lateral = offset * .11
+          let vertical = 0
+          if (pattern === 'spiral' && offset !== 0) {
+            const phase = elapsed * 1.3 + (shot > 2 ? shot - 1 : shot) * Math.PI / 2
+            lateral = Math.cos(phase) * .21
+            vertical = Math.sin(phase) * .16
+          }
+          const velocityDirection = direction.add(right.scale(lateral)).addInPlace(up.scale(vertical)).normalize()
           spawnBolt(actor.position.add(velocityDirection.scale(actor.hitRadius + 0.5)), velocityDirection, velocityDirection.scale(speed), amount, false, actor.faction, {
-            position: { x: actor.position.x, y: actor.position.y, z: actor.position.z }, label: actor.mission?.title ?? FACTIONS[actor.faction].name, kind: 'weapon',
+            position: { x: actor.position.x, y: actor.position.y, z: actor.position.z }, label: profile ? actor.mission!.title : actor.name, kind: 'weapon',
           })
         }
       }
@@ -499,7 +650,8 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           b.position.addInPlaceFromFloats(-formationTravel.x * overlap * (1 - aShare), -formationTravel.y * overlap * (1 - aShare), -formationTravel.z * overlap * (1 - aShare))
         }
       }
-      for (const actor of activeActors) { actor.root!.position.copyFrom(actor.position); spatial.update(actor) }
+      handlePlayerContact(input, dt)
+      for (const actor of activeActors) { actor.root!.position.copyFrom(actor.position); if (!actor.defeated || !actor.mission) spatial.update(actor) }
       streaming.activeActors = activeActors.length
       streaming.candidates = candidateCount
       streaming.cachedVisuals = cachedVisuals.size
@@ -507,7 +659,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
         visualCleanupClock = 0
         for (const actor of cachedVisuals) {
           if (Vector3.DistanceSquared(input.position, actor.position) <= (RENDER_DISTANCE * 3) ** 2) continue
-          actor.root?.dispose(false, true)
+          actor.root?.dispose(false, false)
           actor.root = null
           cachedVisuals.delete(actor)
         }
@@ -546,7 +698,10 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           const playerContact = segmentBoundsOverlapSphere(relativeFrom, relativeTo, zero, 1.05)
             ? segmentSphereContact(relativeFrom, relativeTo, zero, 1.05) : null
           if (playerContact !== null && playerContact < planetContact) {
-            callbacks.onPlayerHit(bolt.damage, bolt.source)
+            const point = Vector3.Lerp(previousBoltPosition, bolt.mesh.position, playerContact)
+            const center = Vector3.Lerp(input.previousPosition, input.position, playerContact)
+            const source = bolt.source
+            callbacks.onPlayerHit(bolt.damage, source && { ...source, impact: { position: point, normal: point.subtract(center) } })
             hit = true
           }
         } else {
@@ -564,18 +719,11 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           }
           if (target) {
             hit = true
-            const isSignalCore = !target.site && target.mission?.objective === 'disable-signal'
-            const pulseOpen = !isSignalCore || getSignalPulseState(elapsed).open
-            if (pulseOpen) {
-              const damage = applyArmorDamage(bolt.damage, target.site ? target.archetype === 'frigate' ? 5 : 2 : 5)
-              callbacks.damageNumbers.push(createDamageNumber(scene, target.position, damage, bolt.critical))
-              const vitals = resolveBossDamage({ health: target.health, shield: target.shield, amount: damage })
-              target.health = vitals.health
-              target.shield = vitals.shield
-              createImpactEffect(scene, target.position, factionColors.get(target.faction)!, target.site ? 0.55 : 1.2)
-              callbacks.onImpact()
-              if (target.health <= 0) destroyActor(target)
-            }
+            const center = Vector3.Lerp(target.previousPosition, target.position, firstContact)
+            const point = Vector3.Lerp(previousBoltPosition, bolt.mesh.position, firstContact)
+            const normal = point.subtract(center).normalize()
+            const damage = applyArmorDamage(bolt.damage, target.site ? target.archetype === 'frigate' ? 5 : 2 : 5)
+            damageActor(target, damage, point, normal, bolt.critical)
           }
         }
         if (hit || planetContact < Infinity || bolt.remaining <= 0) { releaseBolt(bolt); bolts.splice(index, 1) }
@@ -611,6 +759,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
           health: boss.health, maximumHealth: boss.maxHealth,
           shield: boss.mission?.objective === 'disable-signal' ? getSignalPulseState(elapsed).open ? 0 : boss.maxShield : boss.shield,
           maximumShield: boss.maxShield,
+          charging: boss.fireClock <= .43,
         } : null,
         completedObjectives: encounter ? counts.get(encounter.id) ?? 0 : 0,
         requiredObjectives: encounter ? encounter.objective === 'recover-fragments' ? 3 : encounter.requiredKills ?? 0 : 0,
@@ -626,7 +775,8 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks) {
     dispose() {
       for (const bolt of bolts) bolt.mesh.dispose(false, false)
       for (const mesh of [...playerBoltPool, ...hostileBoltPool, ...templates]) mesh.dispose(false, false)
-      for (const actor of actors) actor.root?.dispose(false, true)
+      for (const actor of cachedVisuals) actor.root?.dispose(false, false)
+      fleetModels.dispose()
       for (const pickup of pickups) pickup.mesh?.dispose()
       shotMaterial.dispose()
       pickupMaterial.dispose()

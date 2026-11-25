@@ -38,18 +38,19 @@
 }
 
 .pilot-inventory .pilot-item .part-artwork { height: 27px; width: 100%; }
-.pilot-inventory .pilot-item > strong { font-size: 9px; line-height: 10px; }
+.pilot-inventory .pilot-item > strong { font-size: 11px; line-height: 13px; }
 .pilot-inventory .pilot-item > small { display: none; }
 .pilot-inventory .pilot-item .rarity-badge {
   padding: 0;
   border: 0;
   color: var(--part-color);
   background: transparent;
-  font-size: 7px;
-  line-height: 8px;
+  font-size: 11px;
+  line-height: 13px;
   letter-spacing: .02em;
 }
 .pilot-inventory .pilot-item-actions button { min-height: 16px; line-height: 12px; }
+.pilot-inventory .pilot-backpack-grid { grid-auto-rows: 84px; }
 .pilot-inventory .pilot-item:hover { border-color: var(--part-color); }
 .pilot-inventory .pilot-item:focus-within { outline: 1px solid var(--part-color); outline-offset: 1px; }
 
@@ -62,10 +63,10 @@
 }
 .pilot-inventory .pilot-equipped-slot .part-artwork { width: 48px; height: 42px; }
 .pilot-inventory .pilot-equipped-slot > .equipped-part-copy { display: grid; min-width: 0; gap: 4px; }
-.pilot-inventory .pilot-equipped-slot button { padding: 0 5px; font-size: 8px; }
+.pilot-inventory .pilot-equipped-slot button { padding: 0 5px; font-size: 11px; }
 .pilot-inventory .pilot-equipped-slot .rarity-badge { color: var(--part-color); }
-.pilot-inventory .pilot-equipped-slot strong { font-size: 10px; }
-.pilot-inventory .equipped-part-copy > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 11px; }
+.pilot-inventory .pilot-equipped-slot strong { font-size: 11px; }
+.pilot-inventory .equipped-part-copy > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 11px; line-height: 13px; }
 .pilot-inventory .pilot-equipped .ship-resistance-readout { margin-top: 8px; }
 
 .pilot-inventory .pilot-materials p {
@@ -77,15 +78,15 @@
 }
 .material-artwork { width: 30px; height: 30px; }
 .pilot-material-copy { display: grid; gap: 3px; }
-.pilot-material-copy > span { font-size: 10px; line-height: 12px; }
-.pilot-material-copy small { color: #6e8495; font-size: 9px; line-height: 11px; }
+.pilot-material-copy > span { font-size: 12px; line-height: 14px; }
+.pilot-material-copy small { color: #a9c3d5; font-size: 11px; line-height: 13px; }
 .pilot-inventory .pilot-materials strong { font-size: 11px; }
 .pilot-inventory .pilot-materials > div { gap: 6px; }
 
 @media (min-width: 761px) and (max-height: 740px) {
   .pilot-inventory { padding: 16px 20px; }
   .pilot-inventory .pilot-inventory-header .eyebrow { margin-top: 0; margin-bottom: 4px; }
-  .pilot-inventory .pilot-inventory-header h2 { font-size: 28px; }
+  .pilot-inventory .pilot-inventory-header h2 { font-size: 22px; }
   .pilot-inventory .pilot-inventory-header > div > p:last-child { margin-top: 5px; }
   .pilot-inventory h3 { margin-top: 14px; margin-bottom: 8px; }
 }
@@ -93,4 +94,70 @@
 @media (max-width: 760px) {
   .pilot-inventory .pilot-equipped-slot { grid-template-columns: 48px minmax(0, 1fr) auto; }
   .pilot-inventory .pilot-materials > div { grid-template-columns: 1fr; }
+}
+
+.pilot-inventory-backdrop .pilot-inventory {
+  width: min(1240px, 100%);
+  grid-template-columns: minmax(0, 1.4fr) minmax(310px, 1fr);
+  grid-template-areas: 'header header' 'equipped backpack' 'materials backpack';
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px 20px;
+  background: radial-gradient(ellipse at 28% 40%, #132833 0, #0a141e 43%, #080f18 85%);
+}
+.pilot-inventory .pilot-inventory-header { gap: 12px; }
+.pilot-inventory-header > div { margin-right: auto; }
+.pilot-open-statistics, .ship-sheet-tabs button, .pilot-training-track button {
+  min-height: 34px;
+  border: 1px solid #456475;
+  padding: 6px 10px;
+  background: #101f2a;
+  color: #d7eaf5;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pilot-open-statistics:hover, .ship-sheet-tabs button:hover, .pilot-training-track button:enabled:hover { border-color: #8fd2e2; background: #1a3443; }
+.pilot-open-statistics kbd, .ship-sheet-tabs kbd { margin-left: 4px; color: #84d4df; }
+.pilot-inventory .pilot-ship-deck {
+  display: grid;
+  grid-template-columns: minmax(102px, 1fr) minmax(135px, 1.65fr) minmax(102px, 1fr);
+  gap: 8px;
+}
+.pilot-slot-column { display: grid; gap: 6px; align-content: start; }
+.pilot-inventory .pilot-slot-column .pilot-equipped-slot {
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: minmax(30px, auto) auto;
+  align-items: center;
+  gap: 4px 6px;
+  height: auto;
+  min-height: 70px;
+  padding: 6px;
+}
+.pilot-inventory .pilot-slot-column .part-artwork { width: 30px; height: 30px; }
+.pilot-inventory .pilot-slot-column .pilot-equipped-slot button { grid-column: 1 / -1; min-height: 23px; }
+.pilot-inventory .pilot-slot-column .equipped-part-copy > small { display: block; color: var(--part-color, #a9c3d5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilot-ship-view {
+  position: relative;
+  min-height: 230px;
+  overflow: hidden;
+  display: grid;
+  border: 1px solid #31505e;
+  background: radial-gradient(ellipse at 50% 46%, #31536499, #0a1720 70%),
+    repeating-linear-gradient(90deg, #203d4b66 0 1px, transparent 1px 28px);
+}
+.pilot-ship-view > span[aria-hidden] { position: absolute; inset: auto 0 8px; color: #aed1e0; text-align: center; font-size: 11px; letter-spacing: .2em; pointer-events: none; }
+.pilot-item-compare { display: grid; gap: 6px; margin: 8px 0 0; padding: 8px 10px; border-left: 2px solid #7cb9c7; background: #142632; font-size: 12px; color: #c9dde8; overflow-wrap: anywhere; }
+.pilot-item-compare p { margin: 0; }
+.pilot-item-compare p > span { margin-right: 4px; color: #96baca; }
+.pilot-inventory .pilot-materials > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pilot-inventory .pilot-backpack { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4e6878 #0b1520; }
+
+@media (max-width: 930px) {
+  .pilot-inventory-backdrop .pilot-inventory { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'header' 'equipped' 'backpack' 'materials'; grid-template-rows: auto auto auto auto; }
+  .pilot-inventory .pilot-backpack { overflow-y: visible; }
+}
+@media (max-width: 510px) {
+  .pilot-inventory .pilot-ship-deck { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pilot-ship-view { grid-row: 1; grid-column: 1 / -1; min-height: 160px; }
+  .pilot-inventory .pilot-materials > div { grid-template-columns: minmax(0, 1fr); }
+  .pilot-open-statistics { font-size: 11px; }
 }

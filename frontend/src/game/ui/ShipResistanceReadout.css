@@ -1,7 +1,7 @@
 .ship-resistance-readout { min-width: 0; border: 1px solid #334551; background: #0a141de0; color: #acbecd; }
-.ship-resistance-readout > summary { display: list-item; position: relative; min-height: 26px; padding: 6px 9px; cursor: pointer; font-size: 10px; line-height: 14px; }
+.ship-resistance-readout > summary { display: list-item; position: relative; min-height: 26px; padding: 6px 9px; cursor: pointer; font-size: 12px; line-height: 15px; }
 .ship-resistance-readout > summary::marker { color: #7aabbe; }
-.ship-resistance-readout > summary small { float: right; color: #6e899b; font-size: 9px; }
+.ship-resistance-readout > summary small { float: right; color: #abc5d7; font-size: 11px; }
 .ship-resistance-readout > summary:focus-visible { outline: 1px solid #91c5d7; outline-offset: 2px; }
 .ship-resistance-title { display: block; padding: 10px 10px 0; font-size: 11px; }
 .ship-resistance-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin: 0; padding: 10px; }
@@ -9,7 +9,7 @@
 .ship-resistance-value.resistance-thermal { --resistance-color: #e6a472; }
 .ship-resistance-value.resistance-ion { --resistance-color: #78c8e5; }
 .ship-resistance-value.resistance-radiation { --resistance-color: #b4ce83; }
-.ship-resistance-value dt { min-width: 0; color: #a4b7c7; font-size: 9px; line-height: 12px; overflow-wrap: anywhere; }
-.ship-resistance-value dd { margin: 0; color: var(--resistance-color); font-size: 10px; line-height: 12px; font-variant-numeric: tabular-nums; }
+.ship-resistance-value dt { min-width: 0; color: #c3d5e2; font-size: 11px; line-height: 14px; overflow-wrap: anywhere; }
+.ship-resistance-value dd { margin: 0; color: var(--resistance-color); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; }
 .ship-resistance-bar { grid-column: 1 / -1; display: block; height: 3px; overflow: hidden; background: #25323d; }
 .ship-resistance-bar i { display: block; height: 100%; background: var(--resistance-color); }

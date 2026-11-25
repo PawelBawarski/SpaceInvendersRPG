@@ -7,15 +7,27 @@ import {
 
 export type GameLanguage = 'pl' | 'en'
 export type GraphicsQuality = 'low' | 'standard' | 'high'
+export const RENDER_SCALES = [0.5, 0.67, 0.85, 1, 1.2] as const
+export type RenderScale = (typeof RENDER_SCALES)[number]
 
-export interface GameSettings {
-  language: GameLanguage
+export interface GraphicsSettings {
   graphicsQuality: GraphicsQuality
+  renderScale: RenderScale | null
+  bloom: boolean
+  engineParticles: boolean
+  speedEffects: boolean
+  planetAtmospheres: boolean
+  hangarShadows: boolean
+}
+
+export interface GameSettings extends GraphicsSettings {
+  language: GameLanguage
   controls: ControlBindings
   mouseSensitivity: number
   mainVolume: number
   shotsVolume: number
   musicVolume: number
+  shipLights: boolean
 }
 
 const STORAGE_KEY = 'neon-void:settings:v1'
@@ -23,11 +35,18 @@ const STORAGE_KEY = 'neon-void:settings:v1'
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   language: 'pl',
   graphicsQuality: 'standard',
+  renderScale: null,
+  bloom: true,
+  engineParticles: true,
+  speedEffects: true,
+  planetAtmospheres: true,
+  hangarShadows: true,
   controls: DEFAULT_CONTROL_BINDINGS,
   mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
   mainVolume: 0.8,
   shotsVolume: 0.7,
   musicVolume: 0.35,
+  shipLights: false,
 }
 
 function loadControlBindings(value: unknown): ControlBindings {
@@ -39,7 +58,7 @@ function loadControlBindings(value: unknown): ControlBindings {
   const controls = { ...DEFAULT_CONTROL_BINDINGS }
   const used = new Set<string>()
   // Older profiles have every original command but no full-thrust binding.
-  for (const command of FLIGHT_COMMANDS.filter(command => command !== 'fullBoost')) {
+  for (const command of FLIGHT_COMMANDS.filter(command => command !== 'fullBoost' && command !== 'lights' && command !== 'overdrive')) {
     const binding = parsed[command]
     if (typeof binding !== 'string' || binding.length === 0 || used.has(binding)) {
       return { ...DEFAULT_CONTROL_BINDINGS }
@@ -58,6 +77,14 @@ function loadControlBindings(value: unknown): ControlBindings {
   controls.fullBoost = savedFullBoost && !used.has(savedFullBoost)
     ? savedFullBoost
     : findAvailableBinding(used, ['Space', 'KeyT', 'KeyG', 'KeyR'])
+  used.add(controls.fullBoost)
+  for (const command of ['lights', 'overdrive'] as const) {
+    const binding = parsed[command]
+    controls[command] = typeof binding === 'string' && binding && !used.has(binding)
+      ? binding
+      : findAvailableBinding(used, [DEFAULT_CONTROL_BINDINGS[command], 'KeyU', 'KeyY', 'KeyB'])
+    used.add(controls[command])
+  }
   if (controls.rollLeft === 'KeyE' && controls.rollRight === 'KeyQ') {
     controls.rollLeft = 'KeyQ'
     controls.rollRight = 'KeyE'
@@ -97,11 +124,18 @@ export function loadGameSettings(): GameSettings {
       graphicsQuality: parsed.graphicsQuality === 'low' || parsed.graphicsQuality === 'high'
         ? parsed.graphicsQuality
         : 'standard',
+      renderScale: RENDER_SCALES.find(scale => scale === parsed.renderScale) ?? null,
+      bloom: parsed.bloom !== false,
+      engineParticles: parsed.engineParticles !== false,
+      speedEffects: parsed.speedEffects !== false,
+      planetAtmospheres: parsed.planetAtmospheres !== false,
+      hangarShadows: parsed.hangarShadows !== false,
       controls: loadControlBindings(parsed.controls),
       mouseSensitivity: loadMouseSensitivity(parsed.mouseSensitivity),
       mainVolume: loadVolume(parsed.mainVolume, DEFAULT_GAME_SETTINGS.mainVolume),
       shotsVolume: loadVolume(parsed.shotsVolume, DEFAULT_GAME_SETTINGS.shotsVolume),
       musicVolume: loadVolume(parsed.musicVolume, DEFAULT_GAME_SETTINGS.musicVolume),
+      shipLights: parsed.shipLights === true,
     }
   } catch {
     return { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_CONTROL_BINDINGS } }

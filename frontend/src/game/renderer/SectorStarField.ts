@@ -1,4 +1,5 @@
-import { Color3, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core'
+import { Color3, MeshBuilder, Scene, Vector3 } from '@babylonjs/core'
+import { createSceneMaterial } from './sectorDepth'
 
 const STAR_COLORS = [
   { name: 'blue', diffuse: '#a8d7f0', emissive: '#8bcfff' },
@@ -11,7 +12,7 @@ export function createSectorStarField(scene: Scene, count: number, center: Vecto
     const batchCount = Math.ceil((count - batchIndex) / STAR_COLORS.length)
     if (batchCount <= 0) return []
 
-    const material = new StandardMaterial(`sector${color.name}StarMaterial`, scene)
+    const material = createSceneMaterial(`sector${color.name}StarMaterial`, scene)
     material.diffuseColor = Color3.FromHexString(color.diffuse)
     material.emissiveColor = Color3.FromHexString(color.emissive).scale(0.24)
     const mesh = MeshBuilder.CreateSphere(`sectorStarBatch-${color.name}`, { diameter: 1, segments: 4 }, scene)
@@ -31,14 +32,23 @@ export function createSectorStarField(scene: Scene, count: number, center: Vecto
     }
     mesh.thinInstanceSetBuffer('matrix', matrices, 16, false)
     mesh.thinInstanceRefreshBoundingInfo()
-    return [{ mesh, matrices }]
+    return [{ mesh, matrices, batchIndex }]
   })
 
   return {
+    setCount(total: number) {
+      for (const { mesh, matrices, batchIndex } of batches) {
+        const visible = Math.min(matrices.length / 16, Math.max(0, Math.ceil((total - batchIndex) / STAR_COLORS.length)))
+        if (mesh.thinInstanceCount !== visible) {
+          mesh.thinInstanceCount = visible
+          mesh.thinInstanceRefreshBoundingInfo()
+        }
+      }
+    },
     update(position: Vector3) {
       for (const { mesh, matrices } of batches) {
         let changed = false
-        for (let offset = 0; offset < matrices.length; offset += 16) {
+        for (let offset = 0; offset < mesh.thinInstanceCount * 16; offset += 16) {
           const x = matrices[offset + 12]
           const y = matrices[offset + 13]
           const z = matrices[offset + 14]

@@ -16,13 +16,14 @@ describe('enemy nameplate visibility', () => {
     camera.maxZ = 3000
     camera.getViewMatrix(true)
     camera.getProjectionMatrix(true)
-    const enemy = { id: 'visible', position: new Vector3(0, 0, 100), name: { pl: 'Strażnik', en: 'Warden' }, level: 10, boss: true, hitRadius: 10 }
+    const enemy = { id: 'visible', position: new Vector3(0, 0, 100), name: { pl: 'Strażnik', en: 'Warden' }, level: 10, boss: true, hitRadius: 10,
+      health: 70, maxHealth: 100, shield: 10, maxShield: 40, hitFlash: .2 }
     const labels = projectEnemyNameplates([enemy,
       { ...enemy, id: 'behind', position: new Vector3(0, 0, -100) },
       { ...enemy, id: 'far', position: new Vector3(0, 0, 2000) },
     ], camera, [], 'pl')
     expect(labels).toHaveLength(1)
-    expect(labels[0]).toMatchObject({ id: 'visible', name: 'Strażnik', level: 10, boss: true, x: 50 })
+    expect(labels[0]).toMatchObject({ id: 'visible', name: 'Strażnik', level: 10, boss: true, x: 50, health: 70, maxHealth: 100, shield: 10, maxShield: 40 })
     expect(labels[0].y).toBeLessThan(50)
     const largeBoss = projectEnemyNameplates([{ ...enemy, hitRadius: 100 }], camera, [], 'pl')
     expect(largeBoss).toHaveLength(1)

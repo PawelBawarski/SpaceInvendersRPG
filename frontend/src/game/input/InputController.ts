@@ -10,6 +10,8 @@ export const FLIGHT_COMMANDS = [
   'brake',
   'fire',
   'dodge',
+  'lights',
+  'overdrive',
 ] as const
 
 export type FlightCommand = (typeof FLIGHT_COMMANDS)[number]
@@ -34,6 +36,8 @@ export const DEFAULT_CONTROL_BINDINGS: ControlBindings = {
   brake: 'ControlLeft',
   fire: 'KeyF',
   dodge: 'KeyK',
+  lights: 'KeyH',
+  overdrive: 'KeyX',
 }
 
 const DEFAULT_MODIFIER_ALIASES: Partial<Record<FlightCommand, readonly string[]>> = {
@@ -43,6 +47,7 @@ const DEFAULT_MODIFIER_ALIASES: Partial<Record<FlightCommand, readonly string[]>
 
 export class InputController {
   private readonly keys = new Set<string>()
+  private readonly taps = new Set<string>()
   private bindings: ControlBindings
   private mouseAim = { yaw: 0, pitch: 0 }
   private mouseFire = false
@@ -51,13 +56,18 @@ export class InputController {
   private readonly keyDown = (event: KeyboardEvent) => {
     if (this.suspended) return
     if (event.code === 'Space') event.preventDefault()
+    if (!event.repeat && !this.keys.has(event.code)) {
+      for (const command of ['lights', 'overdrive'] as const) {
+        if (this.bindings[command] === event.code) this.taps.add(event.code)
+      }
+    }
     this.keys.add(event.code)
   }
   private readonly keyUp = (event: KeyboardEvent) => {
     this.keys.delete(event.code)
   }
   private readonly pointerMove = (event: PointerEvent) => {
-    if (!this.canvas) return
+    if (!this.canvas || this.suspended) return
     const bounds = this.canvas.getBoundingClientRect()
     if (bounds.width === 0 || bounds.height === 0) return
 
@@ -67,7 +77,7 @@ export class InputController {
     }
   }
   private readonly pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || this.suspended) return
     this.mouseFire = true
     event.preventDefault()
   }
@@ -78,6 +88,12 @@ export class InputController {
     if (event.button === 0) this.mouseFire = false
   }
   private readonly preventContextMenu = (event: MouseEvent) => event.preventDefault()
+  private readonly clearInput = () => {
+    this.keys.clear()
+    this.taps.clear()
+    this.mouseFire = false
+    this.mouseAim = { yaw: 0, pitch: 0 }
+  }
   private readonly canvas: HTMLCanvasElement | undefined
 
   dispose(): void {
@@ -85,6 +101,7 @@ export class InputController {
     window.removeEventListener('keyup', this.keyUp)
     window.removeEventListener('pointerup', this.pointerUp)
     window.removeEventListener('pointercancel', this.pointerUp)
+    window.removeEventListener('blur', this.clearInput)
     this.canvas?.removeEventListener('pointermove', this.pointerMove)
     this.canvas?.removeEventListener('pointerdown', this.pointerDown)
     this.canvas?.removeEventListener('pointerleave', this.pointerLeave)
@@ -103,6 +120,7 @@ export class InputController {
     window.addEventListener('keyup', this.keyUp)
     window.addEventListener('pointerup', this.pointerUp)
     window.addEventListener('pointercancel', this.pointerUp)
+    window.addEventListener('blur', this.clearInput)
     canvas?.addEventListener('pointermove', this.pointerMove)
     canvas?.addEventListener('pointerdown', this.pointerDown)
     canvas?.addEventListener('pointerleave', this.pointerLeave)
@@ -118,11 +136,11 @@ export class InputController {
 
   setSuspended(suspended: boolean): void {
     this.suspended = suspended
-    if (suspended) {
-      this.keys.clear()
-      this.mouseFire = false
-      this.mouseAim = { yaw: 0, pitch: 0 }
-    }
+    if (suspended) this.clearInput()
+  }
+
+  consumeTap(command: 'lights' | 'overdrive'): boolean {
+    return !this.suspended && this.taps.delete(this.bindings[command])
   }
 
   updateSettings(bindings: ControlBindings, mouseSensitivity: number): void {

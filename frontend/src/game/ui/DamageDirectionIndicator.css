@@ -3,8 +3,8 @@
 .damage-bearing.source-heat { stroke: #ffc46d; filter: drop-shadow(0 0 6px #df7427); }
 .damage-bearing.source-collision { stroke: #ffd095; }
 .damage-bearing-arrow { stroke-width: 3px; }
-.damage-source-label { position: absolute; top: 194px; left: 50%; transform: translateX(-50%); display: grid; gap: 4px; width: 260px; margin: 0; text-align: center; font: 10px/1.3 monospace; text-shadow: 0 2px 5px #000, 0 0 8px #000; animation: damage-bearing-fade 1.4s ease-out forwards; }
-.damage-source-label strong { color: #ffc5ae; font-weight: 500; }
-.damage-source-label span { color: #e1ae9c; font-size: 9px; }
+.damage-source-label { position: absolute; top: 194px; left: 50%; transform: translateX(-50%); display: grid; gap: 3px; width: 260px; margin: 0; text-align: center; font-size: 13px; line-height: 1.3; text-shadow: 0 2px 5px #000, 0 0 8px #000; animation: damage-bearing-fade 1.4s ease-out forwards; }
+.damage-source-label strong { color: #ffd0bc; font-weight: 650; }
+.damage-source-label span { color: #f1c8b8; font-size: 12px; }
 @keyframes damage-bearing-fade { 0%, 35% { opacity: .95; } 100% { opacity: 0; } }
 @media (max-width: 760px) { .damage-direction-feedback { width: 150px; height: 150px; } .damage-source-label { top: 147px; width: 210px; } }

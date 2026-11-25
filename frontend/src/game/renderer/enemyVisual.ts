@@ -1,4 +1,6 @@
 import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode } from '@babylonjs/core'
+import type { FactionId } from '../domain/worldFactions'
+import { createSceneMaterial } from './sectorDepth'
 
 function mergeArmor(root: TransformNode): void {
   const meshes = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh)
@@ -16,7 +18,7 @@ function mergeArmor(root: TransformNode): void {
 }
 
 function metal(scene: Scene, name: string, color: string, emission?: string): StandardMaterial {
-  const material = new StandardMaterial(name, scene)
+  const material = createSceneMaterial(name, scene)
   material.diffuseColor = Color3.FromHexString(color)
   material.specularColor = new Color3(0.68, 0.78, 0.85)
   material.specularPower = 72
@@ -24,9 +26,9 @@ function metal(scene: Scene, name: string, color: string, emission?: string): St
   return material
 }
 
-export function createWardenVisual(scene: Scene, finalEncounter: boolean): TransformNode {
+export function createWardenVisual(scene: Scene, finalEncounter: boolean, faction?: FactionId): TransformNode {
   const root = new TransformNode(finalEncounter ? 'nullChoir' : 'meridianWarden', scene)
-  const armor = metal(scene, 'wardenArmor', finalEncounter ? '#13212c' : '#292126')
+  const armor = metal(scene, 'wardenArmor', finalEncounter ? '#243848' : '#473b40', '#111a26')
   const edges = metal(scene, 'wardenEdgeMetal', '#627583')
   const dark = metal(scene, 'wardenRecesses', '#080d14')
   const energyColor = finalEncounter ? '#83a5ff' : '#ff6240'
@@ -53,7 +55,7 @@ export function createWardenVisual(scene: Scene, finalEncounter: boolean): Trans
     collar.material = layer === 1 ? edges : dark
   }
 
-  const finCount = finalEncounter ? 6 : 4
+  const finCount = faction === 'ashen-legion' ? 8 : faction === 'meridian' ? 4 : finalEncounter ? 6 : 4
   for (let index = 0; index < finCount; index += 1) {
     const angle = index / finCount * Math.PI * 2 + Math.PI / 4
     const assembly = new TransformNode(`wardenArm${index}`, scene)
@@ -71,6 +73,14 @@ export function createWardenVisual(scene: Scene, finalEncounter: boolean): Trans
     plate.rotation.z = Math.PI / 2
     plate.scaling.z = 0.45
     plate.material = armor
+    const plating = MeshBuilder.CreateCylinder(`wardenOuterPlating${index}`, {
+      height: faction === 'ashen-legion' ? 3.2 : 2.4, diameterTop: .35, diameterBottom: .82, tessellation: 5,
+    }, scene)
+    plating.parent = assembly
+    plating.position.set(3.09, 0, .47)
+    plating.rotation.set(Math.PI / 2, faction === 'meridian' ? -.23 : .16, 0)
+    plating.scaling.z = .51
+    plating.material = edges
     const barrel = MeshBuilder.CreateCylinder(`wardenEmitter${index}`, {
       height: 1.65, diameter: 0.3, tessellation: 10,
     }, scene)
@@ -87,6 +97,12 @@ export function createWardenVisual(scene: Scene, finalEncounter: boolean): Trans
     strip.parent = assembly
     strip.position.set(2.25, 0.14, -0.2)
     strip.material = energy
+    for (let cell = 0; cell < 3; cell++) {
+      const vent = MeshBuilder.CreateBox(`wardenEngineVent${index}-${cell}`, { width: .13, height: .05, depth: .28 }, scene)
+      vent.parent = assembly
+      vent.position.set(1.79 + cell * .19, -.283, -.51)
+      vent.material = energy
+    }
   }
 
   const halo = MeshBuilder.CreateTorus('wardenContainmentHalo', {
@@ -96,6 +112,13 @@ export function createWardenVisual(scene: Scene, finalEncounter: boolean): Trans
   halo.rotation.x = Math.PI / 2
   halo.position.z = 0.8
   halo.material = energy
+  const ringArmor = MeshBuilder.CreateTorus('wardenSegmentedArmorRing', {
+    diameter: finalEncounter ? 6.48 : 5.55, thickness: .16, tessellation: faction === 'meridian' ? 12 : 20,
+  }, scene)
+  ringArmor.parent = root
+  ringArmor.rotation.x = Math.PI / 2
+  ringArmor.position.z = .94
+  ringArmor.material = dark
   mergeArmor(root)
   return root
 }

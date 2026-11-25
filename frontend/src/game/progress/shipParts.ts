@@ -1,8 +1,10 @@
 import { DAMAGE_TYPES, getDamageResistance, type ResistanceProfile } from '../domain/damageTypes'
 
-export const SHIP_PART_SLOTS = ['weapon', 'shield', 'engine'] as const
+export const SHIP_PART_SLOTS = ['weapon', 'shield', 'engine', 'armor', 'reactor', 'scanner'] as const
 export const SHIP_PART_STORAGE_CAPACITY = 36
 export type ShipPartSlot = (typeof SHIP_PART_SLOTS)[number]
+export type EquippedShipParts = Record<'weapon' | 'shield' | 'engine', string | null>
+  & Partial<Record<'armor' | 'reactor' | 'scanner', string | null>>
 export type ShipPartRarity = 'standard' | 'refined' | 'prototype'
 export type EquippedPartRarities = Partial<Record<ShipPartSlot, ShipPartRarity>>
 
@@ -23,6 +25,8 @@ export interface ShipPartStats {
   shieldPoints: number
   hullPoints: number
   enginePercent: number
+  sensorRangePercent?: number
+  dodgeCooldownPercent?: number
 }
 
 export interface ShipPart {
@@ -56,12 +60,22 @@ export function getShipPartSellValue(part: ShipPart): number {
   return rarityValue + Math.round(statValue * 2)
 }
 
-const STAT_KEYS: readonly (keyof ShipPartStats)[] = [
+const BASE_STAT_KEYS = [
   'damagePercent',
   'shieldPoints',
   'hullPoints',
   'enginePercent',
-]
+] as const
+const OPTIONAL_STAT_KEYS = ['sensorRangePercent', 'dodgeCooldownPercent'] as const
+const STAT_KEYS = [...BASE_STAT_KEYS, ...OPTIONAL_STAT_KEYS]
+const SLOT_STATS: Record<ShipPartSlot, { key: keyof ShipPartStats; min: number; max: number }> = {
+  weapon: { key: 'damagePercent', min: 6, max: 14 },
+  shield: { key: 'shieldPoints', min: 8, max: 20 },
+  engine: { key: 'enginePercent', min: 4, max: 10 },
+  armor: { key: 'hullPoints', min: 10, max: 24 },
+  reactor: { key: 'dodgeCooldownPercent', min: 7, max: 15 },
+  scanner: { key: 'sensorRangePercent', min: 20, max: 44 },
+}
 
 function randomUnit(random: () => number): number {
   return Math.max(0, Math.min(0.999999, random()))
@@ -75,13 +89,14 @@ export function createRandomShipPart(
   id: string,
   random: () => number = Math.random,
   fixedSlot?: ShipPartSlot,
+  fixedRarity?: ShipPartRarity,
 ): ShipPart {
   const rarityRoll = randomUnit(random)
-  const rarity: ShipPartRarity = rarityRoll < 0.72
+  const rarity = fixedRarity ?? (rarityRoll < 0.72
     ? 'standard'
     : rarityRoll < 0.95
       ? 'refined'
-      : 'prototype'
+      : 'prototype')
   const multiplier = rarity === 'prototype' ? 1.8 : rarity === 'refined' ? 1.35 : 1
   const slot = fixedSlot ?? SHIP_PART_SLOTS[Math.floor(randomUnit(random) * SHIP_PART_SLOTS.length)]
   const stats: ShipPartStats = {
@@ -90,20 +105,11 @@ export function createRandomShipPart(
     hullPoints: 0,
     enginePercent: 0,
   }
-  const primaryStat: keyof ShipPartStats = slot === 'weapon'
-    ? 'damagePercent'
-    : slot === 'shield'
-      ? 'shieldPoints'
-      : 'enginePercent'
-  const range = primaryStat === 'damagePercent'
-    ? [6, 14]
-    : primaryStat === 'shieldPoints'
-      ? [8, 20]
-      : [4, 10]
-  stats[primaryStat] = randomAmount(random, range[0], range[1], multiplier)
+  const primary = SLOT_STATS[slot]
+  stats[primary.key] = randomAmount(random, primary.min, primary.max, multiplier)
 
   if (randomUnit(random) < 0.38) {
-    const secondaryStats = STAT_KEYS.filter((key) => key !== primaryStat)
+    const secondaryStats = BASE_STAT_KEYS.filter((key) => key !== primary.key)
     const secondaryStat = secondaryStats[Math.floor(randomUnit(random) * secondaryStats.length)]
     stats[secondaryStat] = randomAmount(random, 2, 7, multiplier)
   }
@@ -113,7 +119,9 @@ export function createRandomShipPart(
     ? { kinetic: [0.05, 0.1, 0.15][resistanceTier], ion: [0.08, 0.16, 0.24][resistanceTier] }
     : slot === 'engine'
       ? { thermal: [0.08, 0.16, 0.24][resistanceTier], radiation: [0.03, 0.06, 0.09][resistanceTier] }
-      : undefined
+      : slot === 'armor'
+        ? { kinetic: [0.06, 0.12, 0.18][resistanceTier], thermal: [0.03, 0.06, 0.10][resistanceTier] }
+        : undefined
   return { id, slot, rarity, stats, ...(resistances ? { resistances } : {}) }
 }
 
@@ -139,12 +147,16 @@ export function parseShipParts(value: unknown): ShipPart[] {
       || !record.id
       || !SHIP_PART_SLOTS.includes(record.slot as ShipPartSlot)
       || (record.rarity !== 'standard' && record.rarity !== 'refined' && record.rarity !== 'prototype')
-      || STAT_KEYS.some((key) => typeof stats[key] !== 'number' || !Number.isFinite(stats[key]))
+      || BASE_STAT_KEYS.some((key) => typeof stats[key] !== 'number' || !Number.isFinite(stats[key]))
     ) {
       return []
     }
 
     const resistances = parseResistances(record.resistances)
+    const optional = Object.fromEntries(OPTIONAL_STAT_KEYS.flatMap(key => {
+      const amount = stats[key]
+      return typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? [[key, Math.min(100, amount)]] : []
+    }))
     return [{
       id: record.id,
       slot: record.slot as ShipPartSlot,
@@ -154,6 +166,7 @@ export function parseShipParts(value: unknown): ShipPart[] {
         shieldPoints: stats.shieldPoints as number,
         hullPoints: stats.hullPoints as number,
         enginePercent: stats.enginePercent as number,
+        ...optional,
       },
       ...(resistances ? { resistances } : {}),
     }]
@@ -162,7 +175,7 @@ export function parseShipParts(value: unknown): ShipPart[] {
 
 export function getEquippedPartBonuses(
   parts: readonly ShipPart[],
-  equipped: Partial<Record<ShipPartSlot, string>>,
+  equipped: Partial<Record<ShipPartSlot, string | null>>,
 ): ShipPartBonuses {
   const bonuses: ShipPartBonuses = {
     damagePercent: 0,
@@ -174,7 +187,10 @@ export function getEquippedPartBonuses(
   for (const slot of SHIP_PART_SLOTS) {
     const part = parts.find((item) => item.id === equipped[slot] && item.slot === slot)
     if (!part) continue
-    for (const key of STAT_KEYS) bonuses[key] += part.stats[key]
+    for (const key of STAT_KEYS) {
+      const amount = part.stats[key]
+      if (amount) bonuses[key] = (bonuses[key] ?? 0) + amount
+    }
   }
 
   return bonuses

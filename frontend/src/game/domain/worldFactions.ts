@@ -58,7 +58,7 @@ export function createWorldShip(
   const culture = FACTIONS[faction]
   return {
     id, ...position, faction, archetype,
-    health: Math.round(type.health * culture.healthMultiplier),
+    health: Math.round(type.health * culture.healthMultiplier) * 2,
     damage: Math.round(type.damage * culture.damageMultiplier),
     attackInterval: type.attackInterval,
     attackRange: type.attackRange,

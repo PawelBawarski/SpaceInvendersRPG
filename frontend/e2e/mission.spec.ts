@@ -1,14 +1,15 @@
 import { expect, test, type Page } from '@playwright/test'
-import { ORION_PLANETS, ORION_STATIONS, ORION_SUN } from '../src/game/domain/exploration'
+import { getGalaxyWorld, ORION_PLANETS, ORION_SECTOR_BOUNDS, ORION_STATIONS, ORION_SUN } from '../src/game/domain/exploration'
 import { getMission } from '../src/game/missions/definitions'
 import { createEmptyMissionProgress, type MissionProgress } from '../src/game/progress/missionProgress'
+import { getMerchantStock, MERCHANT_MATERIALS } from '../src/game/progress/merchantTrade'
 
 const SAVE_KEY = 'neon-void:mission-progress:v1'
 const canvasLabel = 'Neon Void explorable space sector'
 
 async function loadWorld(page: Page, changes: Partial<MissionProgress> = {}) {
   await page.addInitScript(({ key, progress }) => {
-    localStorage.setItem(key, JSON.stringify(progress))
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(progress))
   }, { key: SAVE_KEY, progress: { ...createEmptyMissionProgress(), ...changes } })
   await page.goto('/')
   await page.getByRole('button', { name: 'Wczytaj grę' }).click()
@@ -45,9 +46,26 @@ async function flightState(page: Page) {
 }
 
 test('new game starts in the galaxy with persistent vitals and rechargeable dodge', async ({ page }) => {
+  test.setTimeout(60000)
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'Wczytaj grę' })).toBeDisabled()
   await page.getByRole('button', { name: 'Nowa gra', exact: true }).click()
+  const circuits = page.getByRole('button', { name: /Obróć obwód/ })
+  await expect(circuits).toHaveCount(3, { timeout: 20000 })
+  for (const [index, turns] of [3, 1, 2].entries()) {
+    for (let turn = 0; turn < turns; turn++) await circuits.nth(index).click()
+  }
+  const launch = page.getByRole('button', { name: /Uruchom silniki i odleć/ })
+  await expect(launch).toBeDisabled()
+  await page.getByRole('slider', { name: 'Napięcie' }).fill('62')
+  await page.getByRole('slider', { name: 'Częstotliwość' }).fill('36')
+  await page.getByRole('button', { name: 'Ustabilizuj reaktor' }).click()
+  await page.getByRole('button', { name: 'Pokaż sekwencję' }).click()
+  await expect(page.locator('.recovery-ignition-readout')).toHaveText('2 · 4 · 1 · 3')
+  await page.getByRole('button', { name: 'Styk 1', exact: true }).click()
+  await expect(page.locator('.recovery-ignition-readout')).toContainText('Zła kolejność')
+  for (const number of [2, 4, 1, 3]) await page.getByRole('button', { name: 'Styk ' + number, exact: true }).click()
+  await launch.click()
   await expect(page.getByLabel(canvasLabel)).toBeVisible({ timeout: 20000 })
   await expect(page.getByRole('progressbar', { name: 'Osłony', exact: true })).toBeVisible()
   await expect(page.getByRole('progressbar', { name: 'Kadłub', exact: true })).toBeVisible()
@@ -69,6 +87,8 @@ test('L opens the cosmic journal, tracks destinations and closes with L or X in 
   await expect(page.getByRole('button', { name: /Dziennik/ })).toHaveCount(0)
   await page.keyboard.press('l')
   await expect(page.getByRole('heading', { name: 'Dziennik nawigacyjny' })).toBeVisible()
+  await expect(page.locator('.journal-header kbd')).toHaveCount(0)
+  await expect(page.locator('.flight-reticle')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Wróć do lotu|Ustawienia|Tytuł/ })).toHaveCount(0)
   await expect(page.locator('.world-mission-grid:not(.world-station-grid) .world-mission')).toHaveCount(12)
   await expect(page.getByRole('button', { name: /Rozpocznij|warsztat/i })).toHaveCount(0)
@@ -76,27 +96,126 @@ test('L opens the cosmic journal, tracks destinations and closes with L or X in 
   await expect(page.locator('.journal-course-readout')).toContainText('Ostatni admirał')
   await page.keyboard.press('l')
   await expect(page.getByLabel(canvasLabel)).toBeVisible()
-  await expect(page.locator('.world-tracked-objective')).toContainText('Ostatni admirał')
+  await expect(page.locator('.world-waypoint')).toContainText('Ostatni admirał')
   expect(await flightState(page)).toMatchObject(before)
   await page.keyboard.press('l')
   await page.getByRole('button', { name: 'Zamknij dziennik' }).click()
   expect(await flightState(page)).toMatchObject(before)
   await page.keyboard.press('l')
-  await expect(page.locator('.world-station-grid article')).toHaveCount(3)
-  await page.locator('.world-station-grid article').first().getByRole('button', { name: /Wyznacz kurs/ }).click()
+  await expect(page.locator('.world-station-grid article')).toHaveCount(getGalaxyWorld('orion-7', 0).stations.length + 1)
+  await page.getByRole('button', { name: `Wyznacz kurs: ${ORION_STATIONS[0].name.pl}` }).click()
   await page.keyboard.press('l')
   await expect(page.locator('.world-hangar-beacon')).toContainText(ORION_STATIONS[0].name.pl)
   await expect(page.locator('.world-waypoint')).toHaveCount(0)
   expect(await flightState(page)).toMatchObject(before)
   await page.keyboard.press('l')
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.locator('.app-screen-overlay').evaluate(element => { element.scrollTop = element.scrollHeight })
+  await page.getByRole('button', { name: 'Misje', exact: true }).click()
+  await page.locator('.journal-missions').evaluate(element => { element.scrollTop = element.scrollHeight })
   const close = page.getByRole('button', { name: 'Zamknij dziennik' })
   const box = await close.boundingBox()
   expect(box!.x + box!.width).toBeLessThanOrEqual(390)
   expect(box!.y).toBeGreaterThanOrEqual(0)
   await close.click()
   await expect(page.getByLabel(canvasLabel)).toBeVisible()
+})
+
+test('sector chart zooms at the pointer, pans and keeps the journal header fixed', async ({ page }) => {
+  await loadWorld(page, { sectorX: -5000, sectorDistance: 2000 })
+  await page.keyboard.press('l')
+  const chart = page.getByRole('group', { name: 'Interaktywna mapa sektora' })
+  const content = page.locator('[data-map-content]')
+  const box = (await chart.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  for (let index = 0; index < 6; index++) await page.mouse.wheel(0, -80)
+  await expect(page.getByRole('button', { name: 'Resetuj widok mapy' })).toBeEnabled()
+  const before = await content.getAttribute('transform')
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * .63, box.y + box.height * .62, { steps: 4 })
+  await page.mouse.up()
+  await expect(content).not.toHaveAttribute('transform', before!)
+  await page.getByRole('button', { name: 'Oddal mapę' }).click()
+  await page.getByRole('button', { name: 'Resetuj widok mapy' }).click()
+  await expect(content).toHaveAttribute('transform', 'translate(0 0) scale(1)')
+
+  const list = page.locator('.journal-missions')
+  expect((await list.locator('article').first().boundingBox())!.height).toBeLessThan(140)
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight })
+  expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  expect(await page.locator('.app-screen-journal').evaluate(element => element.scrollHeight - element.clientHeight)).toBe(0)
+  await expect(page.getByRole('button', { name: 'Zamknij dziennik' })).toBeInViewport()
+})
+
+test('reaching the boundary opens the jump chart and a hyperspace trip persists the new galaxy', async ({ page }) => {
+  test.setTimeout(65000)
+  await loadWorld(page, { sectorDistance: ORION_SECTOR_BOUNDS.maxZ - 8, shipVitals: { hull: 72, shield: 25 } })
+  await expect(page.locator('.flight-reticle')).toBeVisible()
+  await page.keyboard.down('Space')
+  const chart = page.getByRole('dialog', { name: 'Mapa galaktyk' })
+  await expect(chart).toBeVisible()
+  await page.keyboard.up('Space')
+  await expect(page.locator('.flight-reticle')).toHaveCount(0)
+  await chart.getByRole('button', { name: 'Vesper' }).click()
+  await chart.getByRole('button', { name: 'Wykonaj skok' }).click()
+  await expect(page.locator('.hyperspace-readout')).toContainText('Vesper')
+  await expect(page.locator('.world-sector')).toHaveAttribute('data-galaxy', 'vesper', { timeout: 20000 })
+  await expect(page.getByRole('progressbar', { name: 'Kadłub', exact: true })).toHaveAttribute('aria-valuenow', '72')
+  await expect(page.getByRole('progressbar', { name: 'Osłony', exact: true })).toHaveAttribute('aria-valuenow', '25')
+  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).sectorId, SAVE_KEY)).toBe('vesper')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Wyjdź' }).click()
+  await page.reload()
+  await page.getByRole('button', { name: 'Wczytaj grę' }).click()
+  await expect(page.locator('.world-sector')).toHaveAttribute('data-galaxy', 'vesper')
+  await expect(page.getByLabel(canvasLabel)).toHaveAttribute('data-ready', 'true', { timeout: 20000 })
+  await page.keyboard.press('l')
+  await page.getByRole('button', { name: 'Kurs do granicy galaktyki' }).click()
+  await expect(page.getByRole('progressbar', { name: 'Postęp lotu do granicy' })).toBeVisible()
+  await expect(chart).toBeVisible({ timeout: 15000 })
+  await chart.getByRole('button', { name: 'Orion–7' }).click()
+  await chart.getByRole('button', { name: 'Wykonaj skok' }).click()
+  await expect(page.locator('.world-sector')).toHaveAttribute('data-galaxy', 'orion-7', { timeout: 20000 })
+})
+
+test('the merchant trades both ways and a prototype drive runs from one nozzle', async ({ page }) => {
+  test.setTimeout(55000)
+  const { merchant } = getGalaxyWorld('orion-7', 0)
+  const credits = 3500
+  await loadWorld(page, { credits, experience: 12000, sectorX: merchant.x, sectorY: merchant.y, sectorDistance: merchant.z - 750 })
+  const stock = getMerchantStock(createEmptyMissionProgress())
+  const engine = stock.find(offer => offer.part.slot === 'engine' && offer.part.rarity === 'prototype')!
+  const gun = stock.find(offer => offer.part.slot === 'weapon' && offer.part.rarity === 'standard')!
+  const material = MERCHANT_MATERIALS[0]
+  const trade = page.getByRole('dialog', { name: 'Arka Wymiany' })
+  await page.getByRole('button', { name: 'Handluj z Arką Wymiany' }).click()
+  await expect(trade.locator('.merchant-row.rarity-refined')).toHaveCount(3)
+  await expect(page.locator('.flight-reticle')).toHaveCount(0)
+  await trade.getByRole('button', { name: /^Kup · Złom/ }).click()
+  await trade.getByRole('button', { name: /^Kup · Silnik Prototyp/ }).click()
+  await expect(trade.getByRole('button', { name: /^Kup · Silnik Prototyp/ })).toBeDisabled()
+  await trade.getByRole('button', { name: /^Kup · Uzbrojenie Standardowy/ }).click()
+  await trade.getByRole('button', { name: 'Sprzedawaj' }).click()
+  await trade.getByRole('button', { name: /^Sprzedaj · Złom/ }).click()
+  await trade.getByRole('button', { name: /^Sprzedaj · Uzbrojenie Standardowy/ }).click()
+  const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), SAVE_KEY)
+  expect(saved.scrapMetal).toBe(0)
+  expect(saved.shipParts.map((part: { id: string }) => part.id)).toEqual([engine.part.id])
+  expect(saved.credits).toBeGreaterThan(credits - material.buy + material.sell - engine.price - gun.price)
+  expect(saved.purchasedMerchantOffers).toContain(engine.part.id)
+  await trade.getByRole('button', { name: 'Zamknij handel' }).click()
+  await page.keyboard.press('i')
+  await page.locator('.pilot-item.rarity-prototype').getByRole('button', { name: 'Załóż', exact: true }).click()
+  await page.getByRole('button', { name: 'Zamknij ekwipunek' }).click()
+  await page.mouse.move(2, 2)
+  await page.keyboard.down('Space')
+  await expect.poll(() => page.evaluate(() => {
+    const scene = (window as any).__world
+    const nozzles = scene.transformNodes.filter((node: any) => node.name.startsWith('shipThruster'))
+    const jets = scene.particleSystems.filter((system: any) => system.name.startsWith('shipIonTrail'))
+    return { nozzles: nozzles.length, active: jets.filter((system: any) => system.emitRate > 0).length }
+  })).toEqual({ nozzles: 1, active: 1 })
+  await page.keyboard.up('Space')
+  await expect(page.locator('.flight-reticle')).toBeVisible()
 })
 
 test('pause settings close and retain the live world', async ({ page }) => {
@@ -108,6 +227,12 @@ test('pause settings close and retain the live world', async ({ page }) => {
   await page.locator('#pause-mainVolume').focus()
   await page.keyboard.press('ArrowRight')
   await expect(page.locator('output[for="pause-mainVolume"]')).toHaveText('81%')
+  await page.getByLabel('Skala renderowania').selectOption('0.67')
+  await page.getByLabel('Poświata światła').uncheck()
+  await expect.poll(() => page.evaluate(() => {
+    const scene = (window as any).__world
+    return [scene.getEngine().getHardwareScalingLevel(), scene.effectLayers.find((layer: any) => layer.name === 'sectorGlow').isEnabled]
+  })).toEqual([1 / .67, false])
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Wznów' }).click()
   expect((await flightState(page)).sceneId).toBe(before.sceneId)
@@ -168,6 +293,7 @@ test('local docking preloads the hangar, lands and launches at the same station'
   expect(Math.min(...suspension.map(sample => sample.y))).toBeLessThan(suspension.at(-1)!.y - 0.01)
   for (const sample of suspension) for (const bottom of sample.feet) expect(bottom).toBeCloseTo(-0.97, 3)
   await expect(hangar).toHaveAttribute('data-landing-state', 'landed', { timeout: 15000 })
+  await expect(page.locator('.flight-reticle')).toHaveCount(0)
   await expect(hangar).toHaveAttribute('data-gear-deployment', '1.000')
   const feet = await page.evaluate(() => {
     const scene = (window as any).__core.EngineStore.Instances.flatMap((engine: any) => engine.scenes)
@@ -182,6 +308,12 @@ test('local docking preloads the hangar, lands and launches at the same station'
   })
   for (const height of feet) expect(Math.abs(height)).toBeLessThan(0.001)
   await expect(page.locator('.garage-toolbar')).toContainText(station.name.pl)
+  await page.locator('.hangar-crew-panel summary').click()
+  await page.getByRole('button', { name: 'Sera Tal' }).click()
+  await expect(page.locator('.hangar-crew-line')).toContainText('kartografka')
+  await page.getByRole('button', { name: 'K-7' }).click()
+  await expect(page.locator('.hangar-crew-line')).toContainText('robot techniczny')
+  await page.locator('.hangar-crew-panel summary').click()
   await page.keyboard.press('l')
   await expect(page.getByRole('heading', { name: 'Dziennik nawigacyjny' })).toBeVisible()
   await expect(page.getByLabel(canvasLabel)).toHaveCount(0)
@@ -248,6 +380,12 @@ test('streaks stop while coasting and bullets overtake the boosting ship', async
   await page.keyboard.down('ShiftLeft')
   await expect.poll(async () => (await flightState(page)).streaks, { timeout: 15000 }).toBe(true)
   await expect.poll(async () => (await flightState(page)).exhaustRate).toBeGreaterThan(0)
+  await expect.poll(async () => Number(await page.getByLabel(canvasLabel).getAttribute('data-flight-speed'))).toBeGreaterThan(140)
+  const chaseDistance = await page.evaluate(() => {
+    const scene = (window as any).__world
+    return scene.activeCamera.position.subtract(scene.getTransformNodeByName('playerShip').position).length()
+  })
+  expect(chaseDistance).toBeLessThan(22)
   await page.keyboard.down('f')
   await expect.poll(() => page.evaluate(() => {
     const scene = (window as any).__world
@@ -263,13 +401,27 @@ test('streaks stop while coasting and bullets overtake the boosting ship', async
 test('Q and E allow full opposite rolls', async ({ page }) => {
   test.setTimeout(45000)
   await loadWorld(page)
+  const wingHeightDifference = () => page.evaluate(() => {
+    const { Matrix, Vector3 } = (window as any).__core
+    const scene = (window as any).__world
+    const engine = scene.getEngine()
+    const viewport = scene.activeCamera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight())
+    const screenY = (side: number) => {
+      const wing = scene.getMeshByName('shipWingNavigation' + side)
+      wing.computeWorldMatrix(true)
+      return Vector3.Project(wing.getAbsolutePosition(), Matrix.IdentityReadOnly, scene.getTransformMatrix(), viewport).y
+    }
+    return screenY(-1) - screenY(1)
+  })
   const start = (await flightState(page)).roll
   await page.keyboard.down('q')
+  await expect.poll(wingHeightDifference).toBeGreaterThan(5)
   await expect.poll(async () => Math.abs((await flightState(page)).roll - start), { timeout: 15000 }).toBeGreaterThan(Math.PI * 2)
   await page.keyboard.up('q')
   const afterQ = (await flightState(page)).roll
   expect(afterQ - start).toBeGreaterThan(Math.PI * 2)
   await page.keyboard.down('e')
+  await expect.poll(wingHeightDifference).toBeLessThan(-5)
   await expect.poll(async () => Math.abs((await flightState(page)).roll - afterQ), { timeout: 15000 }).toBeGreaterThan(Math.PI * 2)
   await page.keyboard.up('e')
   expect((await flightState(page)).roll - afterQ).toBeLessThan(-Math.PI * 2)
@@ -279,7 +431,7 @@ test('remote boss is accessible before earlier missions and rewards victory once
   test.setTimeout(60000)
   const mission = getMission('null-choir')
   await loadWorld(page, { sectorX: mission.worldPosition.x, sectorY: mission.worldPosition.y, sectorDistance: mission.worldPosition.z - 170,
-    shipParts: [{ id: 'test-gun', slot: 'weapon', rarity: 'standard', stats: { damagePercent: 100, shieldPoints: 0, hullPoints: 0, enginePercent: 0 } }],
+    shipParts: [{ id: 'test-gun', slot: 'weapon', rarity: 'standard', stats: { damagePercent: 700, shieldPoints: 0, hullPoints: 0, enginePercent: 0 } }],
     equippedParts: { weapon: 'test-gun', shield: null, engine: null }, shieldLevel: 30,
   })
   await expect(page.getByRole('progressbar', { name: 'Kadłub bossa' })).toBeVisible()
@@ -288,7 +440,7 @@ test('remote boss is accessible before earlier missions and rewards victory once
   await expect(bossNameplate).toContainText('Pusty Chór')
   await expect(bossNameplate).toContainText(/LVL \d+/)
   await expect(page.locator('.damage-direction-feedback')).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('.damage-source-label')).toContainText(mission.title.pl)
+  await expect(page.locator('.damage-source-label')).toContainText(mission.title.pl, { timeout: 15000 })
   const sizes = await page.evaluate(() => {
     const nodes = (window as any).__world.transformNodes
     const boss = nodes.find((node: any) => node.metadata?.worldEnemyId === 'world-boss-null-choir')
@@ -318,7 +470,7 @@ test('enemy names follow visible ships and static rendering shares geometry', as
   await loadWorld(page, { sectorX: -1200, sectorY: 480, sectorDistance: 5900 })
   const nameplate = page.locator('.enemy-nameplate[data-enemy-id="drone-a"]')
   await expect(nameplate).toContainText('Zwiadowca Meridian')
-  await expect(nameplate).toContainText('LVL 3')
+  await expect(nameplate).toContainText('LVL 4')
   const rendering = await page.evaluate(() => {
     const scene = (window as any).__world
     const proxies = scene.meshes.filter((mesh: any) => mesh.name.startsWith('planet-distant-'))
@@ -330,13 +482,67 @@ test('enemy names follow visible ships and static rendering shares geometry', as
       enemyLevel: scene.transformNodes.find((node: any) => node.metadata?.worldEnemyId === 'drone-a').metadata.enemyLevel,
     }
   })
-  expect(rendering).toMatchObject({ proxies: 60, geometries: 1, stations: [4, 4, 4], enemyLevel: 3 })
+  expect(rendering).toMatchObject({ proxies: 47, geometries: 1, enemyLevel: 4 })
+  expect(rendering.stations).toHaveLength(getGalaxyWorld('orion-7', 0).stations.length)
+  expect(rendering.stations.every((batches: number) => batches === 4)).toBe(true)
   expect(rendering.glowWidth).toBeLessThanOrEqual(rendering.renderWidth / 8)
   expect(rendering.glowIntensity).toBeCloseTo(0.18)
+  const radar = page.getByLabel('Radar taktyczny')
+  await expect(radar).toContainText('Wrogowie z przodu')
+  await expect(nameplate.getByRole('progressbar', { name: /Kadłub/ })).toBeVisible()
+  await expect(nameplate.getByRole('progressbar', { name: /Osłona/ })).toHaveCount(0)
   await page.evaluate(() => { (window as any).__world.getTransformNodeByName('playerShip').rotation.y = Math.PI })
   await expect(nameplate).toHaveCount(0)
   await page.evaluate(() => { (window as any).__world.getTransformNodeByName('playerShip').rotation.y = 0 })
   await expect(nameplate).toBeVisible()
+  await page.evaluate(() => {
+    const state = window as any
+    state.__recordedArmorHit = false
+    state.__world.onAfterRenderObservable.add(() => {
+      state.__recordedArmorHit ||= state.__world.meshes.some((mesh: any) =>
+        mesh.name.startsWith('combatHitRing') && mesh.isEnabled() && mesh.visibility > .2 && mesh.material?.name === 'combatImpact-armor')
+    })
+  })
+  await page.keyboard.down('f')
+  await expect.poll(() => page.evaluate(() => (window as any).__recordedArmorHit)).toBe(true)
+  await page.keyboard.up('f')
+})
+
+test('scanner modules, pilot skills and flight lights change the live ship', async ({ page }) => {
+  test.setTimeout(60000)
+  await loadWorld(page, { sectorX: -5000, sectorY: -3000, sectorDistance: 2000, experience: 950,
+    shipParts: [{ id: 'radar-array', slot: 'scanner', rarity: 'standard',
+      stats: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0, sensorRangePercent: 35 } }],
+  })
+  const canvas = page.getByLabel(canvasLabel)
+  const radar = page.getByLabel('Radar taktyczny')
+  await expect(radar).toContainText('Przód czysty')
+  await expect(canvas).toHaveAttribute('data-headlights', 'off')
+  await page.keyboard.press('h')
+  await expect(canvas).toHaveAttribute('data-headlights', 'on')
+  expect(await page.evaluate(() => (window as any).__world.getLightByName('pilotSearchlight').isEnabled())).toBe(true)
+  await radar.getByRole('button', { name: /Światła/ }).click()
+  await expect(canvas).toHaveAttribute('data-headlights', 'off')
+  await page.keyboard.press('i')
+  const inventory = page.getByRole('dialog', { name: 'Ekwipunek pilota' })
+  await expect(inventory.locator('.pilot-equipped-slot')).toHaveCount(6)
+  await inventory.getByRole('button', { name: 'Załóż', exact: true }).click()
+  await expect(inventory.getByLabel('Podgląd wyposażenia 3D')).toHaveAttribute('data-equipped-parts', 'scanner')
+  await inventory.getByRole('button', { name: /Parametry i rozwój/ }).click()
+  const sheet = page.getByRole('dialog', { name: 'Statystyki statku' })
+  await sheet.getByRole('button', { name: 'Rozwój pilota' }).click()
+  const overdrive = sheet.getByRole('button', { name: 'Odblokuj Przeciążenie napędu' })
+  await expect(overdrive).toBeDisabled()
+  await sheet.getByRole('button', { name: 'Odblokuj Precyzyjne stery' }).click()
+  await overdrive.click()
+  await sheet.getByRole('button', { name: 'Odblokuj Daleki nasłuch' }).click()
+  await page.keyboard.press('Escape')
+  await expect(radar).toContainText('Zasięg 2,8 km')
+  await expect.poll(() => page.evaluate(() => (window as any).__world.getMeshByName('shipScannerDish') !== null)).toBe(true)
+  await page.keyboard.press('x')
+  await expect(canvas).toHaveAttribute('data-overdrive', 'active')
+  await expect(radar.getByRole('button', { name: 'Przeciążenie napędu' })).toBeDisabled()
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).pilotSkills, SAVE_KEY)).toEqual(['flight-trim', 'overdrive', 'long-scan'])
 })
 
 test('same-faction trios patrol together with stable spacing and visible identities', async ({ page }) => {
@@ -423,7 +629,7 @@ test('C shows current ship statistics and an equipped 3D model while preserving 
   await expect(sheet).toBeVisible()
   await expect(sheet.getByText('Obrażenia pocisku', { exact: true }).locator('..').locator('dd')).toHaveText('33–45')
   await expect(sheet.locator('.resistance-thermal dd')).toHaveText('16%')
-  await expect(sheet.locator('.ship-stats-module')).toHaveCount(3)
+  await expect(sheet.locator('.ship-stats-module')).toHaveCount(6)
   const preview = sheet.getByLabel('Ship statistics 3D preview')
   await expect(preview).toHaveAttribute('data-equipped-parts', 'weapon,shield,engine')
   await expect(preview).toHaveAttribute('data-ready', 'true', { timeout: 25000 })
@@ -453,14 +659,14 @@ test('old saves near an expanded planet resume safely without hull or shield dam
   expect(Math.hypot(position.x - planet.x, position.y - planet.y, position.z - planet.z) - planet.radius).toBeCloseTo(8)
   await expect(page.getByRole('progressbar', { name: 'Kadłub', exact: true })).toHaveAttribute('aria-valuenow', '80')
   await expect(page.getByRole('progressbar', { name: 'Osłony', exact: true })).toHaveAttribute('aria-valuenow', '40')
-  await expect(page.getByRole('button', { name: 'Zeskanuj i odzyskaj zasoby' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Zeskanuj', exact: true })).toBeEnabled()
 })
 
 test('local planet scans persist', async ({ page }) => {
   const planet = ORION_PLANETS[0]
   await loadWorld(page, { sectorX: planet.x, sectorY: planet.y, sectorDistance: planet.z - planet.radius - 8, completedMissions: ['glass-orbit'] })
-  await page.getByRole('button', { name: 'Zeskanuj i odzyskaj zasoby' }).click()
-  await expect(page.getByRole('button', { name: 'Obiekt zbadany' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Zeskanuj', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Zeskanuj', exact: true })).toHaveCount(0)
   await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).visitedPlanets, SAVE_KEY)).toContain(planet.id)
 })
 
@@ -531,12 +737,12 @@ test('sun is distant and visible while planets stream within a fixed detail budg
     const scene = (window as any).__world
     const star = scene.getTransformNodeByName('orionSun')
     return { starZ: star.position.z, sunReady: !!scene.getMeshByName('orionSunCore'), streaming: scene.metadata.planetStreaming,
-      fullPlanetCount: scene.meshes.filter((mesh: any) => /^planet-(?!distant)/.test(mesh.name) && !mesh.name.includes('lod')).length }
+      fullPlanetCount: scene.meshes.filter((mesh: any) => mesh.name.startsWith('planet-') && mesh.material?.name.startsWith('planetMaterial-') && !mesh.name.includes('lod')).length }
   })
   expect(result.starZ).toBe(ORION_SUN.z)
   expect(result.starZ).toBeGreaterThan(150000)
   expect(result.sunReady).toBe(true)
-  expect(result.streaming.total).toBe(60)
+  expect(result.streaming.total).toBe(47)
   expect(result.streaming.budget).toBe(2)
   expect(result.streaming.detailed).toBeLessThanOrEqual(2)
   expect(result.fullPlanetCount).toBeLessThanOrEqual(2)
@@ -551,7 +757,7 @@ test('the expanded fleet streams only nearby actors and giant planets load terra
   expect(population.activeActors).toBeLessThanOrEqual(population.activeLimit)
   expect(population.candidates).toBeLessThan(population.totalActors / 10)
   const largest = ORION_PLANETS.reduce((largest, planet) => planet.radius > largest.radius ? planet : largest)
-  expect(largest.radius).toBe(37800)
+  expect(largest.radius).toBeGreaterThanOrEqual(50000)
   await page.evaluate(planet => {
     const ship = (window as any).__world.getTransformNodeByName('playerShip')
     ship.position.set(planet.x, planet.y, planet.z - planet.radius - 2000)

@@ -100,35 +100,35 @@
   z-index: 1;
   width: min(620px, calc(100% - 48px));
   margin-left: clamp(24px, 9vw, 160px);
-  padding-top: clamp(100px, 19vh, 220px);
+  padding-top: clamp(56px, 15vh, 164px);
 }
 
 .eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   color: #ffb85c;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.12em;
 }
 
 .menu-content h1 {
   margin: 0;
   max-width: 560px;
-  font-family: Inter, "Segoe UI", sans-serif;
-  font-size: clamp(48px, 7vw, 100px);
+  font-family: var(--ui-font);
+  font-size: clamp(39px, 5.8vw, 68px);
   font-weight: 800;
   line-height: 0.94;
   letter-spacing: -0.045em;
   text-transform: uppercase;
-  text-shadow: 0 8px 38px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 4px 30px #09111c, 0 0 32px #75d9ff55;
 }
 
 .lead {
-  max-width: 520px;
-  margin: 34px 0;
-  color: #bcc7d5;
-  font-size: clamp(16px, 1.5vw, 20px);
-  line-height: 1.65;
+  max-width: 470px;
+  margin: 19px 0 24px;
+  color: #dae7f1;
+  font-size: clamp(14px, 1.3vw, 17px);
+  line-height: 1.55;
 }
 
 .primary-action {
@@ -195,7 +195,7 @@
 
 .campaign-objective strong {
   color: #f0b96f;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
 }
 
@@ -263,7 +263,19 @@
 
 .title-actions .primary-action {
   width: 100%;
+  min-height: 48px;
+  border-radius: 6px;
+  color: #101c26;
+  background: linear-gradient(112deg, #ffd496, #efa95f);
 }
+
+.title-actions .menu-action {
+  border-color: #4d657b;
+  border-radius: 6px;
+  background: linear-gradient(120deg, #162637e8, #0a1623f2);
+  color: #e1edf6;
+}
+.title-actions .menu-action:hover:not(:disabled) { border-color: #8dbcce; background: #173346; }
 
 .menu-action,
 .nav-action {
@@ -354,9 +366,9 @@
 .utility-title {
   margin: 0 0 24px;
   color: #eef5ff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(36px, 5.5vw, 64px);
-  line-height: 0.95;
+  font-family: var(--ui-font);
+  font-size: clamp(24px, 3.6vw, 38px);
+  line-height: 1.15;
 }
 
 .utility-panel {
@@ -400,17 +412,17 @@
 
 .settings-header .eyebrow,
 .game-settings-header .eyebrow {
-  margin-bottom: 10px;
-  color: #8ec8da;
-  font-size: 9px;
+  margin-bottom: 5px;
+  color: #a9d8e5;
+  font-size: 11px;
   line-height: 1.5;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.09em;
 }
 
 .settings-header .utility-title {
   margin: 0;
-  font-family: Inter, "Segoe UI", sans-serif;
-  font-size: clamp(28px, 4vw, 42px);
+  font-family: var(--ui-font);
+  font-size: clamp(22px, 3.2vw, 30px);
   font-weight: 650;
   line-height: 1.1;
   letter-spacing: -0.03em;
@@ -744,7 +756,7 @@
 .sector-readout strong,
 .sector-kicker {
   color: #f0b96f;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.18em;
 }
 
@@ -816,7 +828,7 @@
 
 .sector-objective > span {
   color: #f0b96f;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.16em;
 }
 
@@ -837,7 +849,7 @@
 
 .sector-objective small {
   color: #8fc9d7;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .sector-contact {
@@ -865,7 +877,7 @@
 .sector-distance,
 .sector-message {
   color: #8fc9d7;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .sector-message {
@@ -1124,7 +1136,7 @@
 .garage-toolbar > div:first-child > span {
   overflow: hidden;
   color: #f0b96f;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-overflow: ellipsis;
@@ -1263,7 +1275,7 @@
 
 .garage-speech-bubble strong {
   color: #8ed8e7;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.06em;
 }
 
@@ -1273,13 +1285,29 @@
 }
 
 .garage-speech-ssil-of-nacre {
-  left: 47%;
+  left: 42%;
   bottom: 37%;
 }
 
 .garage-speech-ivo-saar {
   left: 35%;
   bottom: 14%;
+}
+
+.garage-speech-k-7 { left: 15%; bottom: 33%; }
+.garage-speech-sera-tal { left: 42%; bottom: 28%; }
+.planetary-garage:has(.hangar-crew-panel[open]) .garage-speech-bubbles { visibility: hidden; }
+.hangar-crew-panel { position: absolute; z-index: 3; left: 18px; bottom: 156px; width: min(320px, calc(100vw - 36px)); pointer-events: auto; }
+.hangar-crew-panel summary { width: max-content; padding: 8px 12px; border: 1px solid #527281; background: #0b1822f5; color: #d4ecf2; cursor: pointer; font-size: 13px; }
+.hangar-crew-panel-body { display: grid; gap: 10px; margin-top: 6px; padding: 12px; border: 1px solid #385764; background: #0b1822f5; max-height: min(260px, calc(100dvh - 210px)); overflow-y: auto; }
+.hangar-crew-roster { display: flex; flex-wrap: wrap; gap: 5px; }
+.hangar-crew-roster button { min-height: 31px; padding: 4px 8px; border: 1px solid #354e5d; background: #172733; color: #d7e6ee; cursor: pointer; font-size: 12px; }
+.hangar-crew-roster button[aria-pressed='true'] { border-color: #87bbcd; background: #243f50; }
+.hangar-crew-line { display: flex; flex-wrap: wrap; gap: 4px 9px; color: #d0e4ef; font-size: 13px; line-height: 1.45; }
+.hangar-crew-line small { color: #aac5d4; }
+.hangar-crew-line p { width: 100%; margin: 2px 0 0; }
+@media (max-width: 640px) {
+  .hangar-crew-panel { bottom: 132px; left: 10px; }
 }
 
 .garage-interface-heading .eyebrow {
@@ -1289,9 +1317,9 @@
 .garage-interface-heading h1 {
   margin: 0;
   color: #eef5ff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(30px, 4vw, 42px);
-  line-height: 1;
+  font-family: var(--ui-font);
+  font-size: clamp(21px, 2.6vw, 28px);
+  line-height: 1.15;
 }
 
 .garage-interface-heading > p:not(.eyebrow) {
@@ -1358,7 +1386,7 @@
 
 .garage-slot-empty {
   color: #7f8c9c;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .rarity-standard { --rarity-color: #b7c3d0; }
@@ -1373,7 +1401,7 @@
   border: 1px solid var(--rarity-color, #b7c3d0);
   border-radius: 2px;
   color: var(--rarity-color, #b7c3d0);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 1.2;
@@ -1384,7 +1412,7 @@
 .garage-empty-parts {
   margin: 10px 0 4px;
   color: #9eacba;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -1394,7 +1422,7 @@
 
 .garage-materials p {
   padding: 8px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .garage-craft {
@@ -1420,7 +1448,7 @@
 .garage-sell-hint {
   margin: -4px 0 7px;
   color: #8193a6;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .garage-part {
@@ -1443,7 +1471,7 @@
 
 .garage-part-info small {
   color: #9eacba;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .garage-part-actions {
@@ -1453,7 +1481,7 @@
 .garage-part-action {
   min-height: 30px;
   padding: 0 8px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .garage-back {
@@ -1483,7 +1511,7 @@
   }
 
   .garage-toolbar > div:first-child > span {
-    font-size: 8px;
+    font-size: 11px;
   }
 
   .garage-exit {
@@ -1499,7 +1527,7 @@
   .garage-panel-toggle {
     min-height: 40px;
     padding: 0 7px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .garage-interface {
@@ -1582,7 +1610,7 @@
     left: 16px;
     justify-content: space-between;
     gap: 8px;
-    font-size: 9px;
+    font-size: 11px;
   }
   .title-content {
     padding-top: 56px;
@@ -1597,7 +1625,7 @@
   .nav-action {
     min-height: 36px;
     padding: 0 8px;
-    font-size: 9px;
+    font-size: 11px;
   }
   .utility-content {
     padding: 32px 0;
@@ -1686,7 +1714,7 @@
 .radio-log .radio-label {
   margin-bottom: 5px;
   color: #78ccdf;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.16em;
 }
@@ -1750,10 +1778,10 @@
 }
 
 .game-pause-dialog h1 {
-  margin: 0 0 22px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(24px, 5vw, 34px);
-  letter-spacing: 0.08em;
+  margin: 0 0 15px;
+  font-family: var(--ui-font);
+  font-size: clamp(20px, 3.2vw, 26px);
+  letter-spacing: 0.035em;
 }
 
 .game-pause-actions {
@@ -1793,8 +1821,8 @@
 
 .game-settings-header h1 {
   margin: 0;
-  font-family: Inter, "Segoe UI", sans-serif;
-  font-size: clamp(21px, 4vw, 28px);
+  font-family: var(--ui-font);
+  font-size: clamp(19px, 3.2vw, 25px);
   font-weight: 650;
   letter-spacing: -0.02em;
 }
@@ -1910,7 +1938,7 @@
   .game-setting-row {
     grid-template-columns: minmax(90px, 1fr) minmax(70px, 1fr) 38px;
     gap: 7px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .game-keybindings {
@@ -1932,13 +1960,13 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 4px;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.14em;
 }
 
 .boss-meter-label b {
   color: #edf4fc;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.06em;
 }
 
@@ -2022,7 +2050,7 @@
 
 .pilot-progress-count {
   color: #9eacba;
-  font-size: 9px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -2036,7 +2064,7 @@
   color: #d7e0ea;
   background: rgba(16, 23, 32, 0.88);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.08em;
 }
 
@@ -2095,8 +2123,8 @@
 .pilot-inventory-header h2 {
   margin: 0;
   color: #eef5ff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(24px, 3vw, 32px);
+  font-family: var(--ui-font);
+  font-size: clamp(19px, 2.7vw, 25px);
 }
 
 .pilot-inventory-header > div > p:last-child {
@@ -2185,7 +2213,7 @@
 .pilot-equipped-slot small,
 .pilot-item small {
   color: #9eacba;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -2197,7 +2225,7 @@
   color: #f0b96f;
   background: #101720;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -2215,7 +2243,7 @@
 .pilot-item .rarity-badge {
   width: fit-content;
   max-width: 100%;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .pilot-backpack-grid {
@@ -2252,20 +2280,20 @@
 
 .pilot-item > strong {
   flex: none;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 12px;
 }
 
 .pilot-item .rarity-badge {
   flex: none;
   padding: 2px 4px;
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   line-height: 10px;
 }
 
 .pilot-item small {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 12px;
 }
 
@@ -2282,7 +2310,7 @@
   flex: 1;
   overflow: hidden;
   padding: 0 2px;
-  font-size: 8px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2437,7 +2465,7 @@
   max-width: 290px;
   margin-top: 8px;
   color: #93a2b1;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0.06em;
@@ -2474,6 +2502,29 @@
 .app-screen-flight > * { pointer-events: auto; }
 .app-screen-flight > .pilot-progress-hud { pointer-events: none; }
 .app-screen-flight .planetary-garage { background: transparent; }
+.graphics-options {
+  min-width: 0;
+  margin: 12px 0 16px;
+  padding: 5px 9px 9px;
+  color: #cadfef;
+  background: #0b1825;
+  border: 1px solid #39576d;
+  border-radius: 7px;
+}
+.graphics-options legend { padding: 0 5px; color: #bcdeec; font-size: 13px; font-weight: 650; }
+.graphics-options .graphics-option { min-height: 34px; padding-block: 5px; grid-template-columns: minmax(0, 1fr) auto; }
+.graphics-options .graphics-option input[type='checkbox'] { width: 17px; height: 17px; margin: 0 5px; accent-color: #8ddcf6; }
+.graphics-options .graphics-option select { max-width: 100%; }
+.garage-speech-bubbles .garage-speech-bubble {
+  border: 1px solid #557b92;
+  border-radius: 7px;
+  background: linear-gradient(130deg, #122a39f7, #071520f5);
+  box-shadow: 0 8px 22px #020811ad;
+  color: #daecf7;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.garage-speech-bubbles .garage-speech-bubble strong { color: #b9eafb; font-size: 12px; font-weight: 650; letter-spacing: .025em; }
 .persistent-garage-layer .garage-world { position: absolute; inset: 0; width: 100%; height: 100%; }
 .station-landing-status {
   position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);

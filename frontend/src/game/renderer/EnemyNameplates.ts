@@ -6,6 +6,7 @@ import { segmentSphereContact } from './worldCombatMath'
 
 export interface EnemyNameplate {
   id: string; name: string; level: number; boss: boolean; x: number; y: number
+  health: number; maxHealth: number; shield: number; maxShield: number; hit: boolean
 }
 
 /** Called at HUD frequency; labels reuse the DOM and allocate no GPU textures or meshes. */
@@ -31,7 +32,9 @@ export function projectEnemyNameplates(targets: readonly EnemyNameplateTarget[],
     projected.y = Math.max(36, Math.min(height - 20, projected.y))
     if (planets.some(planet => segmentBoundsOverlapSphere(camera.position, target.position, planet, planet.radius)
       && segmentSphereContact(camera.position, target.position, planet, planet.radius) !== null)) continue
-    labels.push({ id: target.id, name: target.name[language], level: target.level, boss: target.boss, x: projected.x / width * 100, y: projected.y / height * 100 })
+    labels.push({ id: target.id, name: target.name[language], level: target.level, boss: target.boss,
+      x: projected.x / width * 100, y: projected.y / height * 100,
+      health: target.health, maxHealth: target.maxHealth, shield: target.shield, maxShield: target.maxShield, hit: target.hitFlash > 0 })
     if (labels.length >= 32) break
   }
   return labels

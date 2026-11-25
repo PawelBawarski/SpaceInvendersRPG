@@ -4,11 +4,11 @@ import type { EquippedPartRarities } from '../progress/shipParts'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import { createShipVisual } from './shipVisual'
 
-interface ShipPreviewCanvasProps { rarities: EquippedPartRarities; quality: GraphicsQuality }
+interface ShipPreviewCanvasProps { rarities: EquippedPartRarities; quality: GraphicsQuality; label?: string }
 
-export function ShipPreviewCanvas({ rarities, quality }: ShipPreviewCanvasProps) {
+export function ShipPreviewCanvas({ rarities, quality, label = 'Ship statistics 3D preview' }: ShipPreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { weapon, shield, engine: engineRarity } = rarities
+  const { weapon, shield, engine: engineRarity, armor, reactor, scanner } = rarities
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -30,7 +30,7 @@ export function ShipPreviewCanvas({ rarities, quality }: ShipPreviewCanvasProps)
     light.groundColor = new Color3(0.13, 0.21, 0.28)
     const glow = new GlowLayer('shipSheetGlow', scene)
     glow.intensity = 0.5
-    const ship = createShipVisual(scene, { weapon, shield, engine: engineRarity })
+    const ship = createShipVisual(scene, { weapon, shield, engine: engineRarity, armor, reactor, scanner })
     ship.name = 'shipSheetPreview'
     const ring = MeshBuilder.CreateTorus('shipSheetPlatform', { diameter: 6.5, thickness: 0.017, tessellation: 64 }, scene)
     ring.position.y = -0.9
@@ -60,7 +60,7 @@ export function ShipPreviewCanvas({ rarities, quality }: ShipPreviewCanvasProps)
       scene.dispose()
       engine.dispose()
     }
-  }, [weapon, shield, engineRarity, quality])
-  return <canvas ref={canvasRef} className="ship-stats-preview" aria-label="Ship statistics 3D preview"
+  }, [weapon, shield, engineRarity, armor, reactor, scanner, quality])
+  return <canvas ref={canvasRef} className="ship-stats-preview" aria-label={label}
     data-equipped-parts={Object.keys(rarities).join(',')} />
 }

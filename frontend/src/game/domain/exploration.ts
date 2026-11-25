@@ -3,8 +3,11 @@ import { createWorldShip, type FactionId, type ShipArchetype } from './worldFact
 import type { MissionId } from '../missions/definitions'
 import { sampleFormationPosition, samplePatrolRoute, type PatrolFormation } from './patrolFormation'
 import { buildDeepSpacePopulation } from './worldPopulation'
+import { buildGalaxyLayout, buildPlanetHangars, GALAXY_BOUNDS, type GalaxyBounds } from './galaxyLayout'
+import { getGalaxy, ORION_SECTOR_ID, type Galaxy, type GalaxyId } from './galaxyChart'
 export { createWorldShip, FACTIONS, SHIP_ARCHETYPES } from './worldFactions'
 export type { FactionId, ShipArchetype, CombatShipProfile } from './worldFactions'
+export { ORION_SECTOR_ID } from './galaxyChart'
 
 export interface SectorPosition {
   x: number
@@ -13,6 +16,8 @@ export interface SectorPosition {
 }
 
 export interface PlanetSite extends SectorPosition {
+  orbitalFaction?: FactionId
+  hasHangar?: boolean
   id: string
   name: { pl: string; en: string }
   description: { pl: string; en: string }
@@ -35,6 +40,7 @@ export interface DroneSite extends SectorPosition {
 }
 
 export interface StationSite extends SectorPosition {
+  planetId?: string
   id: string
   name: { pl: string; en: string }
   radius: number
@@ -52,21 +58,41 @@ export interface SunSite extends SectorPosition {
   heatRange: number
 }
 
-export const ORION_SECTOR_ID = 'orion-7'
-
-export const ORION_SECTOR_BOUNDS = {
-  minX: -560000,
-  maxX: 560000,
-  minY: -350000,
-  maxY: 350000,
-  minZ: 0,
-  maxZ: 3000000,
-} as const
-
-export const ORION_SUN: Readonly<SunSite> = {
-  id: 'meridian-sun', name: { pl: 'Słońce Meridian', en: 'Meridian Sun' },
-  x: 153600, y: 40960, z: 1945600, radius: 192000, heatRange: 20000,
+export interface MerchantSite extends SectorPosition {
+  name: { pl: string; en: string }
+  radius: number
+  tradeRange: number
 }
+
+export const MERCHANT_COURSE_ID = 'exchange-ark'
+
+export interface GalaxyWorld {
+  galaxy: Galaxy
+  bounds: Readonly<GalaxyBounds>
+  planets: readonly PlanetSite[]
+  stations: readonly StationSite[]
+  drones: readonly DroneSite[]
+  sun: SunSite
+  merchant: MerchantSite
+}
+
+const ORION_SCALE = 3
+export const ORION_SECTOR_BOUNDS: Readonly<GalaxyBounds> = {
+  minX: GALAXY_BOUNDS.minX * ORION_SCALE, maxX: GALAXY_BOUNDS.maxX * ORION_SCALE,
+  minY: GALAXY_BOUNDS.minY * ORION_SCALE, maxY: GALAXY_BOUNDS.maxY * ORION_SCALE,
+  minZ: GALAXY_BOUNDS.minZ * ORION_SCALE, maxZ: GALAXY_BOUNDS.maxZ * ORION_SCALE,
+}
+
+const ORIGINAL_ORION_SUN: Readonly<SunSite> = {
+  id: 'meridian-sun', name: { pl: 'Słońce Meridian', en: 'Meridian Sun' },
+  x: 337920, y: 90112, z: 4280320, radius: 288000, heatRange: 20000,
+}
+
+function scaleOrionBody<T extends PlanetSite | SunSite>(site: T): T {
+  return { ...site, x: site.x * ORION_SCALE, y: site.y * ORION_SCALE, z: site.z * ORION_SCALE, radius: site.radius * 2 }
+}
+
+export const ORION_SUN = scaleOrionBody(ORIGINAL_ORION_SUN)
 
 export const ORION_START_POSITION: Readonly<SectorPosition> = { x: 0, y: 0, z: 0 }
 
@@ -394,13 +420,22 @@ const OUTER_REACH_PLANETS: readonly PlanetSite[] = [
   en: 'A vast world on the Meridian frontier. Armed patrols circle its deposits.',
 } }))
 
-export const ORION_PLANETS: readonly PlanetSite[] = [
+const BASE_PLANETS: readonly PlanetSite[] = [
   ...PREVIOUS_ORION_PLANETS.map(planet => ({
     ...planet, x: planet.x * 10, y: planet.y * 10, z: planet.z * 10, radius: planet.radius * 12,
   })),
   ...FRONTIER_PLANETS.map(planet => ({ ...planet, radius: planet.radius * 1.5 })),
   ...OUTER_REACH_PLANETS,
 ].map(planet => ({ ...planet, x: planet.x * 5.12, y: planet.y * 5.12, z: planet.z * 5.12, radius: planet.radius * 9 }))
+
+function buildOrionPlanets(seed: number) {
+  const previousLayout = buildGalaxyLayout(BASE_PLANETS, seed, ORION_STATIONS, ORIGINAL_ORION_SUN)
+  return previousLayout.slice(0, Math.round(previousLayout.length * 0.75)).map(scaleOrionBody)
+}
+
+export let ORION_PLANETS: readonly PlanetSite[] = buildOrionPlanets(0)
+export let PLANET_HANGARS: readonly StationSite[] = buildPlanetHangars(ORION_PLANETS)
+export let ALL_HANGARS: readonly StationSite[] = [...ORION_STATIONS, ...PLANET_HANGARS]
 
 const PREVIOUS_ORION_DRONES: readonly DroneSite[] = [
   { id: 'drone-a', x: -120, y: 48, z: 612, health: 45 },
@@ -418,12 +453,12 @@ const PREVIOUS_ORION_DRONES: readonly DroneSite[] = [
 const FLEET_FACTIONS: readonly FactionId[] = ['meridian', 'nacre', 'null-cult', 'ashen-legion']
 const FLEET_ARCHETYPES: readonly ShipArchetype[] = ['scout', 'interceptor', 'bomber', 'frigate']
 
-export const ORION_DRONES: readonly DroneSite[] = [
+function buildWorldFleet(): DroneSite[] { return [
   ...PREVIOUS_ORION_DRONES.map((site, index) => ({
     ...createWorldShip(site.id, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[index % 4], {
       x: site.x * 10, y: site.y * 10, z: site.z * 10,
     }),
-    health: site.health,
+    health: site.health * 2,
   })),
   ...Array.from({ length: 62 }, (_, index) => {
     const planet = ORION_PLANETS[index % PREVIOUS_ORION_PLANETS.length]
@@ -436,22 +471,25 @@ export const ORION_DRONES: readonly DroneSite[] = [
       { x: planet.x + Math.cos(angle) * orbit, y: planet.y + Math.sin(angle * 0.7) * 90, z: planet.z + Math.sin(angle) * orbit },
     )
   }),
-  ...FRONTIER_PLANETS.flatMap((source, planetIndex) => Array.from({ length: 2 }, (_, side) => {
-    const planet = ORION_PLANETS.find(site => site.id === source.id)!
-    const index = planetIndex * 2 + side
-    const angle = index * 2.399963229728653
-    const orbit = planet.radius + 340
-    return createWorldShip(
-      `frontier-patrol-${index + 1}`,
-      FLEET_FACTIONS[index % FLEET_FACTIONS.length],
-      FLEET_ARCHETYPES[(index + Math.floor(index / 4)) % FLEET_ARCHETYPES.length],
-      { x: planet.x + Math.cos(angle) * orbit, y: planet.y + Math.sin(angle * 0.7) * 150, z: planet.z + Math.sin(angle) * orbit },
-    )
-  })),
+  ...FRONTIER_PLANETS.flatMap((source, planetIndex) => {
+    const planet = ORION_PLANETS.find(site => site.id === source.id)
+    if (!planet) return []
+    return Array.from({ length: 2 }, (_, side) => {
+      const index = planetIndex * 2 + side
+      const angle = index * 2.399963229728653
+      const orbit = planet.radius + 340
+      return createWorldShip(
+        `frontier-patrol-${index + 1}`,
+        FLEET_FACTIONS[index % FLEET_FACTIONS.length],
+        FLEET_ARCHETYPES[(index + Math.floor(index / 4)) % FLEET_ARCHETYPES.length],
+        { x: planet.x + Math.cos(angle) * orbit, y: planet.y + Math.sin(angle * 0.7) * 150, z: planet.z + Math.sin(angle) * orbit },
+      )
+    })
+  }),
   ...Array.from({ length: 120 }, (_, index): DroneSite => {
     const groupIndex = Math.floor(index / 4)
     const slot = index % 4
-    const planet = ORION_PLANETS[groupIndex * 2 + (slot === 3 ? 1 : 0)]
+    const planet = ORION_PLANETS[(groupIndex * 2 + (slot === 3 ? 1 : 0)) % ORION_PLANETS.length]
     const angle = groupIndex * 2.399963229728653 + 0.85
     if (slot === 3) {
       const orbit = planet.radius + 740
@@ -471,15 +509,55 @@ export const ORION_DRONES: readonly DroneSite[] = [
       formation,
     }
   }),
-  ...buildDeepSpacePopulation(ORION_PLANETS, ORION_STATIONS, ORION_SUN),
-]
+  ...buildDeepSpacePopulation(ORION_PLANETS, ALL_HANGARS, ORION_SUN),
+] }
+
+export let ORION_DRONES: readonly DroneSite[] = buildWorldFleet()
+
+export function activateGalaxy(seed: number) {
+  ORION_PLANETS = buildOrionPlanets(seed)
+  PLANET_HANGARS = buildPlanetHangars(ORION_PLANETS)
+  ALL_HANGARS = [...ORION_STATIONS, ...PLANET_HANGARS]
+  ORION_DRONES = buildWorldFleet()
+}
+
+export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld {
+  const galaxy = getGalaxy(id)
+  const merchant: MerchantSite = {
+    name: { pl: 'Arka Wymiany', en: 'Exchange Ark' },
+    x: -880, y: 160, z: 3100, radius: 230, tradeRange: 1150,
+  }
+  if (id === ORION_SECTOR_ID) return { galaxy, bounds: ORION_SECTOR_BOUNDS, planets: ORION_PLANETS, stations: ALL_HANGARS, drones: ORION_DRONES, sun: ORION_SUN, merchant }
+
+  const seed = (campaignSeed ^ galaxy.seedSalt) >>> 0 || 1
+  const side = id === 'vesper' ? -1 : 1
+  const sun = {
+    id: `${id}-sun`, name: { pl: `Słońce ${galaxy.name}`, en: `${galaxy.name} Sun` },
+    x: 640000 * side, y: 145000, z: 3910000 + seed % 800000,
+    radius: 240000 + seed % 45000, heatRange: 20000,
+  }
+  const ports = ORION_STATIONS.map((station, index): StationSite => ({
+    ...station, id: `${id}-${station.id}`, x: station.x * side,
+    name: { pl: `${['Port', 'Przekaźnik', 'Stocznia'][index]} ${galaxy.name}`, en: `${galaxy.name} ${['Port', 'Relay', 'Shipyard'][index]}` },
+    color: galaxy.color,
+    launchPosition: { ...station.launchPosition, x: station.launchPosition.x * side },
+  }))
+  const planets = buildGalaxyLayout(BASE_PLANETS, seed, ports, sun).map((planet, index) => ({
+    ...planet, id: `${id}-${planet.id}`,
+    name: { pl: `${galaxy.name} · ${planet.name.pl}`, en: `${galaxy.name} · ${planet.name.en}` },
+    color: [planet.color, galaxy.color, galaxy.sunColor][index % 3],
+  }))
+  const stations = [...ports, ...buildPlanetHangars(planets)]
+  const drones = buildDeepSpacePopulation(planets, stations, sun).map(drone => ({ ...drone, id: `${id}-${drone.id}` }))
+  return { galaxy, bounds: GALAXY_BOUNDS, planets, stations, drones, sun, merchant: { ...merchant, x: merchant.x * side } }
+}
 
 export const VEIL_PATROL_DRONE: DroneSite = {
   id: 'veil-warden',
   x: 5880,
   y: -1920,
   z: 42000,
-  health: 85,
+  health: 170,
   faction: 'null-cult', archetype: 'interceptor', damage: 14,
   attackInterval: 1.9, attackRange: 120, projectileSpeed: 95, speed: 24,
   missionId: 'patrol-hunt',
@@ -489,8 +567,8 @@ export function distanceBetween(left: SectorPosition, right: SectorPosition): nu
   return Math.hypot(left.x - right.x, left.y - right.y, left.z - right.z)
 }
 
-export function findNearestStation(position: SectorPosition): StationSite {
-  return ORION_STATIONS.reduce((nearest, station) => distanceBetween(position, station) < distanceBetween(position, nearest) ? station : nearest)
+export function findNearestStation(position: SectorPosition, stations: readonly StationSite[] = ALL_HANGARS): StationSite {
+  return stations.reduce((nearest, station) => distanceBetween(position, station) < distanceBetween(position, nearest) ? station : nearest)
 }
 
 export function findNearbyPlanet(

@@ -1,8 +1,13 @@
 import type { FlightCommand, MouseFlightInput } from '../input/InputController'
 import type { ShipPartBonuses } from '../progress/shipParts'
+import { DODGE_TIMING } from '../domain/combat'
 
 export const FLIGHT_SPEEDS = { cruise: 292.5, reverse: 241.8 } as const
 const SPEED_RESPONSE = 2.6
+
+export function getDodgeCooldown(bonuses: Pick<ShipPartBonuses, 'dodgeCooldownPercent'>): number {
+  return DODGE_TIMING.cooldown * (1 - Math.min(.55, (bonuses.dodgeCooldownPercent ?? 0) / 100))
+}
 
 export interface FlightState {
   speed: number
@@ -44,7 +49,7 @@ export function readFlightUpdate(
   return {
     pitch: clamp((isDown('pitchDown') ? 1 : 0) - (isDown('pitchUp') ? 1 : 0) + mouse.pitch, -1, 1),
     yaw: clamp((isDown('yawRight') ? 1 : 0) - (isDown('yawLeft') ? 1 : 0) + mouse.yaw, -1, 1),
-    roll: (isDown('rollRight') ? 1 : 0) - (isDown('rollLeft') ? 1 : 0),
+    roll: (isDown('rollLeft') ? 1 : 0) - (isDown('rollRight') ? 1 : 0),
     thrust: isDown('fullBoost') ? 1 : isDown('boost') ? 0.5 : isDown('brake') ? -1 : 0,
     dodgeRequested: isDown('dodge'),
     fireRequested: isDown('fire') || mouse.fire,
@@ -52,7 +57,8 @@ export function readFlightUpdate(
 }
 
 export function integrateShipRoll(angle: number, command: number, dt: number, handling = 1): number {
-  return angle - command * 2.4 * handling * Math.max(0, dt)
+  // The chase camera faces +Z; positive roll lowers the port wing on screen.
+  return angle + command * 2.4 * handling * Math.max(0, dt)
 }
 
 export function approachFlightSpeed(speed: number, targetSpeed: number, dt: number): number {

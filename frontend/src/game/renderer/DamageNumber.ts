@@ -1,4 +1,5 @@
-import { DynamicTexture, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core'
+import { DynamicTexture, Mesh, MeshBuilder, Scene, Vector3 } from '@babylonjs/core'
+import { createSceneMaterial } from './sectorDepth'
 
 export const DAMAGE_NUMBER_LIFETIME_SECONDS = 1
 
@@ -31,7 +32,7 @@ export function createDamageNumber(
   )
   texture.update()
 
-  const material = new StandardMaterial('damageNumberMaterial', scene)
+  const material = createSceneMaterial('damageNumberMaterial', scene)
   material.disableLighting = true
   material.disableDepthWrite = true
   material.backFaceCulling = false

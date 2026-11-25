@@ -1,5 +1,6 @@
 import { FLIGHT_COMMANDS, type FlightCommand } from '../input/InputController'
 import type { GameSettings } from '../progress/gameSettings'
+import { GraphicsOptions } from './GraphicsOptions'
 
 interface GamePauseOverlayProps {
   language: 'pl' | 'en'
@@ -105,6 +106,7 @@ export function GamePauseOverlay({
                 <option value="high">{polish ? 'Wysoka' : 'High'}</option>
               </select>
             </label>
+            <GraphicsOptions settings={settings} onChange={onUpdateSettings} compact />
             {([
               ['mainVolume', polish ? 'Głośność główna' : 'Master volume'],
               ['shotsVolume', polish ? 'Strzały' : 'Weapon sounds'],

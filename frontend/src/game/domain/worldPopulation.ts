@@ -11,7 +11,7 @@ export function buildDeepSpacePopulation(planets: readonly PlanetSite[], station
   const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
   const eligible = planets.filter(planet => stations.every(station => distance(planet, station) > planet.radius + 14000)
     && distance(planet, sun) > planet.radius + sun.radius + sun.heatRange + 14000)
-  const grouped = Array.from({ length: 1500 }, (_, index): DroneSite => {
+  const grouped = Array.from({ length: 2250 }, (_, index): DroneSite => {
     const group = Math.floor(index / 3)
     const planet = eligible[group % eligible.length]
     const formation = {
@@ -23,7 +23,7 @@ export function buildDeepSpacePopulation(planets: readonly PlanetSite[], station
     const route = samplePatrolRoute(formation, 0)
     return { ...createWorldShip(`deep-wing-${index + 1}`, FACTIONS[group % 4], CLASSES[(group + index % 3) % 4], sampleFormationPosition(route.center, route.forward, formation.slot)), formation }
   })
-  const solos = Array.from({ length: 1274 }, (_, index) => {
+  const solos = Array.from({ length: 2024 }, (_, index) => {
     let position: SectorPosition
     do {
       if (index < 200) position = { x: (index % 2 ? -1 : 1) * (8000 + random() * 14000), y: (random() - 0.5) * 8000, z: 18000 + random() * 100000 }

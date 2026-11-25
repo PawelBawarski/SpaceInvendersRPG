@@ -72,8 +72,8 @@ describe('flight movement', () => {
     let leftRoll = 0
     let rightRoll = 0
     for (let frame = 0; frame < 120; frame += 1) {
-      leftRoll = integrateShipRoll(leftRoll, -1, 1 / 30)
-      rightRoll = integrateShipRoll(rightRoll, 1, 1 / 30)
+      leftRoll = integrateShipRoll(leftRoll, readFlightUpdate(command => command === 'rollLeft').roll, 1 / 30)
+      rightRoll = integrateShipRoll(rightRoll, readFlightUpdate(command => command === 'rollRight').roll, 1 / 30)
     }
 
     expect(leftRoll).toBeGreaterThan(Math.PI * 2)

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MeshBuilder, NullEngine, Scene, Vector3 } from '@babylonjs/core'
-import { ORION_DRONES, ORION_PLANETS } from '../domain/exploration'
+import { createWorldShip, getGalaxyWorld, ORION_DRONES, ORION_PLANETS, type GalaxyWorld } from '../domain/exploration'
 import { buildMissionHostiles, getMission, MISSIONS, type MissionId } from '../missions/definitions'
 import { completeWorldMission, createEmptyMissionProgress, recordMissionObjectiveProgress, type MissionProgress } from '../progress/missionProgress'
 import { createWorldCombat, type WorldCombatInput } from './WorldCombat'
@@ -10,12 +10,10 @@ vi.mock('./DamageNumber', () => ({
     mesh: MeshBuilder.CreatePlane('testDamageNumber', {}, scene), remaining: 1, lifetime: 1, createdAt: 0,
   }),
 }))
-vi.mock('./ImpactEffect', () => ({ createImpactEffect: vi.fn() }))
-
 const resources: Array<{ dispose: () => void }> = []
 afterEach(() => { for (const resource of resources.splice(0).reverse()) resource.dispose(); vi.restoreAllMocks() })
 
-function setup(initial = createEmptyMissionProgress()) {
+function setup(initial = createEmptyMissionProgress(), world?: GalaxyWorld) {
   const engine = new NullEngine({ renderWidth: 800, renderHeight: 600, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 4 })
   resources.push(engine)
   const scene = new Scene(engine)
@@ -24,21 +22,72 @@ function setup(initial = createEmptyMissionProgress()) {
   const complete = vi.fn((id: MissionId) => { progress = completeWorldMission(progress, id) })
   const advance = vi.fn((id: MissionId, count: number) => { progress = recordMissionObjectiveProgress(progress, id, count) })
   const hit = vi.fn()
+  const impact = vi.fn()
+  const contact = vi.fn()
   const defeated = vi.fn((id: string) => { progress = { ...progress, defeatedDrones: [...progress.defeatedDrones, id] } })
   const combat = createWorldCombat(scene, {
     getProgress: () => progress, onPlayerHit: hit, onEnemyDefeated: defeated,
     onMissionComplete: complete, onMissionProgress: advance, onMessage: vi.fn(), onShot: vi.fn(),
-    onImpact: vi.fn(), damageNumbers: [],
-  })
+    onImpact: impact, onPlayerContact: contact, damageNumbers: [],
+  }, world)
   resources.push(combat)
   const update = (position: Vector3, options: Partial<WorldCombatInput> = {}, seconds = 0.1) => combat.update(seconds, {
     position, previousPosition: position.clone(), velocity: Vector3.Zero(), forward: Vector3.Forward(), right: Vector3.Right(),
     firing: false, bonuses: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }, weaponRarity: 'standard', ...options,
   })
-  return { combat, scene, update, hit, complete, advance, defeated, getProgress: () => progress }
+  return { combat, scene, update, hit, complete, advance, defeated, impact, contact, getProgress: () => progress }
 }
 
 describe('physical world encounters', () => {
+  it('flashes a shield hit on the shot side, with shared render geometry for matching ships', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(.5)
+    const drones = [
+      createWorldShip('shielded-a', 'meridian', 'frigate', { x: 0, y: 0, z: 100 }),
+      createWorldShip('shielded-b', 'meridian', 'frigate', { x: 180, y: 0, z: 100 }),
+    ].map(drone => ({ ...drone, speed: 0 }))
+    const { combat, scene, update, impact } = setup(undefined, { ...getGalaxyWorld('vesper', 0), drones, planets: [] })
+    for (let frame = 0; frame < 12 && impact.mock.calls.length === 0; frame++) update(Vector3.Zero(), { firing: true }, .04)
+    const [point, normal, , kind] = impact.mock.calls[0]
+    expect(kind).toBe('shield')
+    expect(point.z).toBeLessThan(100)
+    expect(normal.z).toBeLessThan(0)
+    const target = combat.getNameplateTargets().find(actor => actor.id === 'shielded-a')!
+    expect(target.shield).toBeLessThan(target.maxShield)
+    expect(target.health).toBe(target.maxHealth)
+    expect(target.hitFlash).toBeGreaterThan(0)
+    const parts = drones.map(drone => scene.getTransformNodeByName(drone.id)!.getChildMeshes())
+    expect(parts[0]).toHaveLength(4)
+    expect(parts[0].every(mesh => mesh.isEnabled())).toBe(true)
+    expect(parts[0].map(mesh => mesh.geometry)).toEqual(parts[1].map(mesh => mesh.geometry))
+  })
+
+  it('sweeps ship contact at speed and keeps boss hull and shield immune to ramming', () => {
+    const drone = { ...createWorldShip('ram-test', 'meridian', 'bomber', { x: 0, y: 0, z: 100 }), speed: 0 }
+    const { combat, update, hit, impact, contact } = setup(undefined, { ...getGalaxyWorld('vesper', 0), drones: [drone], planets: [] })
+    const behind = new Vector3(0, 0, 60)
+    const through = new Vector3(0, 0, 145)
+    update(behind)
+    update(through, { previousPosition: behind })
+    expect(hit).toHaveBeenCalledExactlyOnceWith(expect.any(Number), expect.objectContaining({ kind: 'collision' }))
+    expect(contact).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ z: expect.any(Number) }))
+    expect(contact.mock.calls[0][0].z).toBeLessThan(100)
+    expect(impact).toHaveBeenCalledExactlyOnceWith(expect.any(Vector3), expect.any(Vector3), expect.any(Number), 'collision')
+    const survivor = combat.getNameplateTargets()[0]
+    expect(survivor.health + survivor.shield).toBeLessThan(survivor.maxHealth + survivor.maxShield)
+    update(through, { previousPosition: behind })
+    expect(hit).toHaveBeenCalledTimes(1)
+
+    const bossCombat = setup()
+    const site = getMission('warden').worldPosition
+    const start = new Vector3(site.x, site.y, site.z - 170)
+    bossCombat.update(start)
+    const bossVitals = bossCombat.combat.getStatus().boss
+    bossCombat.update(new Vector3(site.x, site.y, site.z + 150), { previousPosition: start })
+    expect(bossCombat.hit).toHaveBeenCalledWith(expect.any(Number), expect.objectContaining({ kind: 'collision' }))
+    expect(bossCombat.impact).not.toHaveBeenCalled()
+    expect(bossCombat.combat.getStatus().boss).toMatchObject({ health: bossVitals!.health, shield: bossVitals!.shield })
+  })
+
   it('flies roaming trios along the same route with stable wing spacing', () => {
     const { combat, update, scene } = setup()
     const player = new Vector3(-600, 600, 9200)
@@ -47,7 +96,7 @@ describe('physical world encounters', () => {
     expect(nodes()).toHaveLength(3)
     const before = nodes().map(node => node.position.clone())
     for (let frame = 0; frame < 100; frame++) update(player)
-    expect(combat.getPerformanceStats().patrolGroups).toBe(530)
+    expect(combat.getPerformanceStats().patrolGroups).toBe(new Set(ORION_DRONES.flatMap(site => site.formation ? [site.formation.id] : [])).size)
     const after = nodes()
     expect(Vector3.Distance(before[0], after[0].position)).toBeGreaterThan(60)
     for (let index = 1; index < 3; index++) {
@@ -161,7 +210,8 @@ describe('physical world encounters', () => {
     const { combat, update, complete } = setup()
     const site = getMission('warden').worldPosition
     const position = new Vector3(site.x, site.y, site.z - 100)
-    for (let frame = 0; frame < 100; frame++) update(position, { firing: true })
+    const bonuses = { damagePercent: 500, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }
+    for (let frame = 0; frame < 100; frame++) update(position, { firing: true, bonuses })
     expect(complete.mock.calls.filter(([id]) => id === 'warden')).toHaveLength(1)
     expect(combat.getStatus().boss).toBeNull()
   })

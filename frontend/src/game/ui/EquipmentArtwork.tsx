@@ -19,6 +19,21 @@ export function PartArtwork({ slot, rarity }: PartArtworkProps) {
     >
       <svg viewBox="0 0 80 44" fill="none">
         <ellipse cx="40" cy="37" rx="25" ry="3" fill="#08121c" opacity=".3" />
+        {slot === 'armor' && <>
+          <path d="M9 29 18 12 36 6 64 10 72 17 61 34 27 39Z" fill="#233548" stroke="#b7c8d1" strokeWidth="1.4"/>
+          <path d="M17 26 24 15 36 10 61 14 65 18 54 26 28 33Z" fill="#7e9aac"/>
+          <path d="M22 24 35 19 60 17M26 31 45 24 60 20" stroke="var(--part-color)" strokeWidth={tier}/>
+        </>}
+        {slot === 'reactor' && <>
+          <path d="M26 5H54L65 22 54 39H26L15 22Z" fill="#253d50" stroke="#96b0c3" strokeWidth="1.4"/>
+          <circle cx="40" cy="22" r="12" fill="#0c1827" stroke="var(--part-color)" strokeWidth={tier}/>
+          <path d="M42 12 32 23H39L37 32 49 20H42Z" fill="var(--part-color)"/>
+        </>}
+        {slot === 'scanner' && <>
+          <path d="M15 32 64 30 58 37H21Z" fill="#2e4559" stroke="#a2bbcc"/>
+          <path d="M21 8Q39 36 65 7L64 17Q35 45 21 8Z" fill="#638396" stroke="#b5d3df"/>
+          <path d="M40 28 49 12M50 7Q58 9 60 16M51 3Q64 5 67 14" stroke="var(--part-color)" strokeWidth={tier}/>
+        </>}
         {slot === 'weapon' && (
           <>
             <path d="m13 23 7-10 24-2 9 7-3 14-28 2-9-5Z" fill="#24394b" stroke="#8ca4b6" />

@@ -3,10 +3,10 @@ import {
   Mesh,
   MeshBuilder,
   Scene,
-  StandardMaterial,
   TransformNode,
   Vector3,
 } from '@babylonjs/core'
+import { createSceneMaterial } from './sectorDepth'
 
 export function createImpactEffect(
   scene: Scene,
@@ -17,7 +17,7 @@ export function createImpactEffect(
   const root = new TransformNode('impactEffect', scene)
   root.position.copyFrom(position)
 
-  const material = new StandardMaterial('impactEffectMaterial', scene)
+  const material = createSceneMaterial('impactEffectMaterial', scene)
   material.diffuseColor.copyFrom(color)
   material.emissiveColor.copyFrom(color).scaleInPlace(1.7)
   material.disableLighting = true

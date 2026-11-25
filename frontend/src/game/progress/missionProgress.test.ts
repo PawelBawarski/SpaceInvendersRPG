@@ -58,6 +58,11 @@ describe('mission progress', () => {
   })
   it('starts from an empty save', () => {
     expect(loadMissionProgress()).toEqual({
+      worldSeed: 0,
+      prologueComplete: true,
+      repairMask: 0,
+      orbitPlanetId: null,
+      droneRespawns: {},
       shipVitals: null,
       completedMissions: [],
       missionObjectiveProgress: {},
@@ -73,11 +78,13 @@ describe('mission progress', () => {
       nullChoirRuns: 0,
       relayData: 0,
       experience: 0,
+      pilotSkills: [],
       scrapMetal: 0,
       copper: 0,
       radioactiveResidue: 0,
       visitedPlanets: [],
       defeatedDrones: [],
+      purchasedMerchantOffers: [],
       sectorId: 'orion-7',
       sectorX: 0,
       sectorY: 0,
@@ -138,7 +145,6 @@ describe('mission progress', () => {
       copper: 0,
       radioactiveResidue: 0,
       visitedPlanets: [],
-      sectorId: '',
       sectorDistance: 0,
       shipParts: [],
       equippedParts: { weapon: null, shield: null, engine: null },
@@ -149,7 +155,7 @@ describe('mission progress', () => {
       credits: 720,
       lastMission: 'victory',
       shieldLevel: 0,
-      experience: 180,
+      experience: 135,
       scrapMetal: 3,
       copper: 2,
     })
@@ -170,7 +176,7 @@ describe('mission progress', () => {
     expect(result.credits).toBe(360)
     expect(result.silentSignalRuns).toBe(1)
     expect(result.relayData).toBe(3)
-    expect(result.experience).toBe(70)
+    expect(result.experience).toBe(35)
   })
 
   it('records silencing the signal source and grants its campaign reward', () => {
@@ -187,7 +193,7 @@ describe('mission progress', () => {
     })
     expect(result.credits).toBe(540)
     expect(result.signalSourceRuns).toBe(1)
-    expect(result.experience).toBe(100)
+    expect(result.experience).toBe(50)
     expect(result).toMatchObject({ scrapMetal: 3, copper: 1 })
   })
 
@@ -202,12 +208,12 @@ describe('mission progress', () => {
     const patrolCleared = applyPatrolHuntReward(surveyed)
     const finale = applyNullChoirReward(patrolCleared)
 
-    expect(surveyed).toMatchObject({ veilSurveyRuns: 1, credits: 150, experience: 75 })
+    expect(surveyed).toMatchObject({ veilSurveyRuns: 1, credits: 150, experience: 37.5 })
     expect(patrolCleared).toMatchObject({ patrolHuntRuns: 1, credits: 375, scrapMetal: 2, copper: 1 })
     expect(finale).toMatchObject({
       nullChoirRuns: 1,
       credits: 695,
-      experience: 345,
+      experience: 172.5,
       scrapMetal: 6,
       copper: 3,
       radioactiveResidue: 1,
@@ -368,10 +374,13 @@ describe('mission progress', () => {
   })
 
   it('rolls bounded random stat lines for ship equipment', () => {
-    const part = createRandomShipPart('part-2', () => 0.99)
+    const part = createRandomShipPart('part-2', () => 0.99, 'engine')
 
     expect(part.rarity).toBe('prototype')
     expect(part.stats.enginePercent).toBeGreaterThan(0)
     expect(part.stats.enginePercent).toBeLessThanOrEqual(18)
+    const scanner = createRandomShipPart('part-3', () => 0.99)
+    expect(scanner.slot).toBe('scanner')
+    expect(scanner.stats.sensorRangePercent).toBe(79)
   })
 })

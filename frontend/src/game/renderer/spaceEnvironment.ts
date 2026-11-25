@@ -4,6 +4,7 @@ import {
 } from '@babylonjs/core'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import type { PlanetSite } from '../domain/exploration'
+import { createSceneMaterial } from './sectorDepth'
 
 function randomSequence(seed: number): () => number {
   let state = seed >>> 0
@@ -28,23 +29,25 @@ function addSphereLods(mesh: Mesh, diameter: number, planetRadius: number, quali
   }
 }
 
-export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, options: { decorativePlanet?: boolean; skyDiameter?: number } = {}): void {
+export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, options: { decorativePlanet?: boolean; skyDiameter?: number; skyTint?: Color3 } = {}): void {
   const size = quality === 'low' ? 1024 : 2048
   const texture = new DynamicTexture('meridianNebulaSky', { width: size, height: size / 2 }, scene, false)
   const context = texture.getContext()
   const random = randomSequence(7319)
   const base = context.createLinearGradient(0, 0, size, size / 2)
-  base.addColorStop(0, '#000102')
-  base.addColorStop(0.55, '#010309')
-  base.addColorStop(1, '#000103')
+  base.addColorStop(0, '#020712')
+  base.addColorStop(0.55, '#040b18')
+  base.addColorStop(1, '#020711')
   context.fillStyle = base
   context.fillRect(0, 0, size, size / 2)
+  const nebula = options.skyTint ?? Color3.FromHexString('#7daecf')
+  const tint = `${Math.round(nebula.r * 95)},${Math.round(nebula.g * 95)},${Math.round(nebula.b * 95)}`
   for (let index = 0; index < 48; index += 1) {
     const x = size * (0.18 + random() * 0.75)
     const y = size * (0.13 + Math.sin(x / size * 6) * 0.08 + random() * 0.15)
     const radius = size * (0.035 + random() * 0.095)
     const cloud = context.createRadialGradient(x, y, 0, x, y, radius)
-    cloud.addColorStop(0, index % 3 === 0 ? 'rgba(75,44,110,0.025)' : 'rgba(24,65,95,0.025)')
+    cloud.addColorStop(0, index % 3 === 0 ? 'rgba(69,45,106,.065)' : `rgba(${tint},.088)`)
     cloud.addColorStop(1, 'rgba(0,0,0,0)')
     context.fillStyle = cloud
     context.fillRect(x - radius, y - radius, radius * 2, radius * 2)
@@ -61,7 +64,7 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
   }
   context.globalAlpha = 1
   texture.update()
-  const material = new StandardMaterial('meridianSkyMaterial', scene)
+  const material = createSceneMaterial('meridianSkyMaterial', scene)
   material.disableLighting = true
   material.emissiveTexture = texture
   material.emissiveColor = Color3.Black()
@@ -132,7 +135,8 @@ export function createPlanetVisual(
       const z = Math.sin(longitude) * Math.cos(latitude)
       const terrain = Math.sin(x * 7 + Math.sin(z * 5 + seed)) * Math.cos(y * 9 - z * 3)
         + Math.sin(z * 17 + x * 11 + seed) * 0.34 + Math.sin(y * 38 + z * 21) * 0.13
-      const cloud = Math.max(0, Math.sin(y * 19 + terrain * 2.2 + seed) - 0.3) * 0.24
+      const cloudShape = Math.sin(y * 19 + terrain * 2.2 + seed) + Math.sin(z * 24 - x * 17 + terrain * 4) * .26
+      const cloud = Math.max(0, cloudShape - 0.41) * 0.26
       const ice = Math.max(0, Math.abs(y) - 0.76) * 1.8
       const brightness = 0.4 + (terrain + 1.5) / 3 * 0.58
       const offset = (py * width + px) * 4
@@ -144,10 +148,10 @@ export function createPlanetVisual(
   }
   context.putImageData(pixels, 0, 0)
   texture.update()
-  const material = new StandardMaterial(`planetMaterial-${site.id}`, scene)
+  const material = createSceneMaterial(`planetMaterial-${site.id}`, scene)
   material.diffuseTexture = texture
   material.diffuseColor = Color3.White()
-  material.emissiveColor = color.scale(0.025)
+  material.emissiveColor = color.scale(0.047)
   material.specularColor = color.scale(0.22)
   material.specularPower = 36
   const planet = MeshBuilder.CreateSphere(`planet-${site.id}`, {
@@ -157,10 +161,11 @@ export function createPlanetVisual(
   planet.material = material
   addSphereLods(planet, site.radius * 2, site.radius, quality)
 
-  const atmosphereMaterial = new StandardMaterial(`atmosphereMaterial-${site.id}`, scene)
+  const atmosphereMaterial = createSceneMaterial(`atmosphereMaterial-${site.id}`, scene)
   atmosphereMaterial.disableLighting = true
-  atmosphereMaterial.emissiveColor = color.scale(0.45)
-  atmosphereMaterial.alpha = 0.16
+  atmosphereMaterial.emissiveColor = Color3.Lerp(color, new Color3(.55, .77, 1), .3).scale(.6)
+  atmosphereMaterial.alpha = 0.27
+  atmosphereMaterial.disableDepthWrite = true
   atmosphereMaterial.opacityFresnelParameters = new FresnelParameters({
     bias: 0, power: 3, leftColor: Color3.White(), rightColor: Color3.Black(),
   })
@@ -172,7 +177,7 @@ export function createPlanetVisual(
   atmosphere.isPickable = false
   addSphereLods(atmosphere, site.radius * 2.065, site.radius, quality)
   if (site.id === 'glass-moon' || site.id === 'quiet-foundry' || site.id === 'nacre-reef') {
-    const ringMaterial = new StandardMaterial(`orbitMaterial-${site.id}`, scene)
+    const ringMaterial = createSceneMaterial(`orbitMaterial-${site.id}`, scene)
     ringMaterial.diffuseColor = color.scale(0.8)
     ringMaterial.emissiveColor = color.scale(0.09)
     ringMaterial.alpha = 0.32

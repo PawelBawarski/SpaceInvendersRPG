@@ -385,13 +385,17 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   }
 ]
 
-export const MISSIONS: readonly MissionDefinition[] = MISSION_SITES.map(mission => {
+function buildMissions(): MissionDefinition[] { return MISSION_SITES.map(source => {
+  const mission = source.bossProfile ? { ...source, bossProfile: { ...source.bossProfile, health: source.bossProfile.health * 6, shield: source.bossProfile.shield * 6 } } : source
   const target = mission.sectorTarget?.type === 'planet' ? ORION_PLANETS.find(planet => planet.id === mission.sectorTarget?.id) : undefined
   if (target) return { ...mission, worldPosition: { x: target.x, y: target.y, z: target.z - target.radius - 100 } }
   const clearance = mission.bossProfile ? BOSS_ESCORT_ORBIT + 7.2 * BOSS_VISUAL_SCALE + 100 : 260
   const nearby = ORION_PLANETS.find(planet => Math.hypot(planet.x - mission.worldPosition.x, planet.y - mission.worldPosition.y, planet.z - mission.worldPosition.z) < planet.radius + clearance)
   return nearby ? { ...mission, worldPosition: { x: nearby.x, y: nearby.y, z: nearby.z - nearby.radius - clearance } } : mission
-})
+}) }
+
+export let MISSIONS: readonly MissionDefinition[] = buildMissions()
+export function refreshMissionLocations() { MISSIONS = buildMissions() }
 
 export function isMissionComplete(progress: CampaignProgress, id: MissionId): boolean {
   if (progress.completedMissions?.includes(id)) return true

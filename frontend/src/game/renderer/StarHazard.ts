@@ -1,22 +1,25 @@
 import {
   Color3, Color4, Constants, DynamicTexture, GlowLayer, Mesh, MeshBuilder, ParticleSystem,
-  PointLight, Scene, StandardMaterial, TransformNode, Vector3,
+  PointLight, Scene, TransformNode, Vector3,
 } from '@babylonjs/core'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import type { SolarHeatSource } from '../simulation/SolarExposure'
+import { createSceneMaterial, usesSectorDepth } from './sectorDepth'
 
 /** A distant emissive star illuminates only its local danger zone. */
-export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: GraphicsQuality) {
+export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: GraphicsQuality, color = '#ffc278') {
+  const tint = Color3.FromHexString(color)
+  const haloColor = (alpha: number) => `rgba(${Math.round(tint.r * 255)}, ${Math.round(tint.g * 255)}, ${Math.round(tint.b * 255)}, ${alpha})`
   const root = new TransformNode('orionSun', scene)
   root.position.set(star.x, star.y, star.z)
   root.metadata = { radius: star.radius, heatRange: star.heatRange }
   const texture = new DynamicTexture('orionSunSurfaceTexture', { width: 512, height: 256 }, scene, false)
   const context = texture.getContext()
   const gradient = context.createLinearGradient(0, 0, 0, 256)
-  gradient.addColorStop(0, '#ffbf55')
-  gradient.addColorStop(0.38, '#ffe7a0')
-  gradient.addColorStop(0.67, '#ffc969')
-  gradient.addColorStop(1, '#e47724')
+  gradient.addColorStop(0, tint.toHexString())
+  gradient.addColorStop(0.38, Color3.Lerp(tint, Color3.White(), .62).toHexString())
+  gradient.addColorStop(0.67, tint.toHexString())
+  gradient.addColorStop(1, tint.scale(.69).toHexString())
   context.fillStyle = gradient
   context.fillRect(0, 0, 512, 256)
   let seed = 7919
@@ -30,7 +33,7 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
     context.fill()
   }
   texture.update()
-  const material = new StandardMaterial('orionSunSurfaceMaterial', scene)
+  const material = createSceneMaterial('orionSunSurfaceMaterial', scene)
   material.disableLighting = true
   material.diffuseColor = Color3.Black()
   material.emissiveColor = Color3.Black()
@@ -45,16 +48,16 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
   const coronaTexture = new DynamicTexture('orionSunCoronaTexture', { width: 256, height: 256 }, scene, false)
   const coronaContext = coronaTexture.getContext()
   const coronaGradient = coronaContext.createRadialGradient(128, 128, 0, 128, 128, 126)
-  coronaGradient.addColorStop(0, 'rgba(255,229,159,.45)')
-  coronaGradient.addColorStop(0.27, 'rgba(255,178,71,.3)')
-  coronaGradient.addColorStop(0.39, 'rgba(235,118,38,.13)')
-  coronaGradient.addColorStop(0.7, 'rgba(196,76,22,.035)')
-  coronaGradient.addColorStop(1, 'rgba(110,30,8,0)')
+  coronaGradient.addColorStop(0, haloColor(.45))
+  coronaGradient.addColorStop(0.27, haloColor(.30))
+  coronaGradient.addColorStop(0.39, haloColor(.13))
+  coronaGradient.addColorStop(0.7, haloColor(.035))
+  coronaGradient.addColorStop(1, haloColor(0))
   coronaContext.fillStyle = coronaGradient
   coronaContext.fillRect(0, 0, 256, 256)
   coronaTexture.hasAlpha = true
   coronaTexture.update()
-  const coronaMaterial = new StandardMaterial('orionSunCoronaMaterial', scene)
+  const coronaMaterial = createSceneMaterial('orionSunCoronaMaterial', scene)
   coronaMaterial.disableLighting = true
   coronaMaterial.diffuseColor = Color3.Black()
   coronaMaterial.emissiveColor = Color3.Black()
@@ -76,7 +79,7 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
   corona.onDisposeObservable.addOnce(() => glow?.removeExcludedMesh(corona))
 
   const heatLight = new PointLight('orionSunHeatLight', root.position.clone(), scene)
-  heatLight.diffuse = new Color3(1, 0.44, 0.11)
+  heatLight.diffuse = tint.scale(.95)
   heatLight.intensity = 1.8
   heatLight.range = star.radius + star.heatRange
   let elapsed = 0
@@ -117,6 +120,7 @@ export function createShipBurnEffect(scene: Scene, ship: TransformNode, quality:
   emitter.isVisible = false
   emitter.isPickable = false
   const flames = new ParticleSystem('shipBurnFlames', capacity, scene)
+  flames.useLogarithmicDepth = usesSectorDepth(scene)
   flames.particleTexture = texture
   flames.emitter = emitter
   flames.createBoxEmitter(new Vector3(-0.3, 0.4, -1.4), new Vector3(0.3, 1.4, -0.5),

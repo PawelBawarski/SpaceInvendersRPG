@@ -3,16 +3,16 @@ import {
   MeshBuilder,
   PointLight,
   Scene,
-  StandardMaterial,
   TransformNode,
   Vector3,
 } from '@babylonjs/core'
+import { createSceneMaterial } from './sectorDepth'
 
 export function createPlanetScanEffect(scene: Scene, position: Vector3, planetRadius: number): void {
   const root = new TransformNode('planetScanEffect', scene)
   root.position.copyFrom(position)
 
-  const material = new StandardMaterial('planetScanMaterial', scene)
+  const material = createSceneMaterial('planetScanMaterial', scene)
   material.diffuseColor = new Color3(0.12, 0.85, 1)
   material.emissiveColor = new Color3(0.12, 0.85, 1)
   material.disableLighting = true

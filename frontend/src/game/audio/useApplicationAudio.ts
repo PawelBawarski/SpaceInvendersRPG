@@ -36,7 +36,7 @@ export function useApplicationAudio(screen: string, levels: GameAudioLevels) {
   }, [])
   useEffect(() => { audioRef.current?.updateLevels({ main, shots, music }) }, [main, shots, music])
   useEffect(() => {
-    audioRef.current?.setAmbience(screen === 'campaign' ? 'journal' : screen === 'garage' ? 'hangar' : screen === 'exploration' ? 'flight' : 'title')
+    audioRef.current?.setAmbience(screen === 'campaign' ? 'journal' : screen === 'garage' || screen === 'prologue' ? 'hangar' : screen === 'exploration' ? 'flight' : 'title')
   }, [screen])
   return audioRef
 }

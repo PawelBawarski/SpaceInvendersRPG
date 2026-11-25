@@ -7,7 +7,7 @@ export interface HangarCrewMember {
   id: string
   name: { pl: string; en: string }
   role: { pl: string; en: string }
-  species: 'human' | 'alien'
+  species: 'human' | 'alien' | 'avian' | 'robot'
   position: { x: number; z: number }
   colors: { suit: string; trim: string; skin: string }
   dialogue: readonly HangarDialogueLine[]
@@ -74,6 +74,30 @@ export const HANGAR_CREW: readonly HangarCrewMember[] = [
       },
     ],
   },
+  {
+    id: 'sera-tal',
+    name: { pl: 'Sera Tal', en: 'Sera Tal' },
+    role: { pl: 'kartografka', en: 'cartographer' },
+    species: 'avian',
+    position: { x: 4.7, z: 0.6 },
+    colors: { suit: '#6b4853', trim: '#fdab83', skin: '#ae7392' },
+    dialogue: [
+      { pl: 'Na radarze góra jest przed dziobem. Skaner dalekiego zasięgu da ci czas, żeby zmienić kurs.', en: 'The top of the radar is ahead of your nose. A long-range scanner gives you time to change course.' },
+      { pl: 'Za skrajem Oriona gwiazdy układają się inaczej. Obierz cel, zanim wejdziesz w nadprzestrzeń.', en: 'Beyond Orion the stars fall into different patterns. Pick a destination before entering hyperspace.' },
+    ],
+  },
+  {
+    id: 'k-7',
+    name: { pl: 'K-7', en: 'K-7' },
+    role: { pl: 'robot techniczny', en: 'service drone' },
+    species: 'robot',
+    position: { x: -4.4, z: -2.3 },
+    colors: { suit: '#64877b', trim: '#bcffab', skin: '#2e423d' },
+    dialogue: [
+      { pl: 'Sprawdziłem reflektory. Zwykle włączasz je klawiszem H. Przydają się w cieniu stacji.', en: 'Headlights checked. They default to H and come in handy in the station’s shadow.' },
+      { pl: 'Pęknięcia poszycia załatam za darmo. Na ładowanie osłony wystawiam rachunek.', en: 'Hull cracks are on the house. Shield charging goes on the invoice.' },
+    ],
+  },
 ]
 
 function conversationTurn(memberId: string, line: HangarDialogueLine): HangarConversationTurn {
@@ -112,5 +136,9 @@ export const HANGAR_CONVERSATIONS: readonly (readonly HangarConversationTurn[])[
       pl: 'Prowadzą do miejsca, którego mapy nie chcą nazwać. Na razie wystarczy.',
       en: 'They lead somewhere the charts refuse to name. That is enough for now.',
     }),
+  ],
+  [
+    conversationTurn('sera-tal', { pl: 'Na skraju układu zniknął sygnał boi. Sama tam polecę po zmianie.', en: 'A beacon went quiet at the edge of the system. I will fly out after my shift.' }),
+    conversationTurn('k-7', { pl: 'Sprawdź przed odlotem, czy masz skaner dalekiego zasięgu.', en: 'Check that you have a long-range scanner before you leave.' }),
   ],
 ]

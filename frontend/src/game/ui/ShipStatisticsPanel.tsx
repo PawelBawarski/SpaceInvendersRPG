@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import type { ShipTelemetry } from '../domain/shipTelemetry'
 import { getShipStatistics } from '../progress/shipStatistics'
 import type { MissionProgress } from '../progress/missionProgress'
@@ -7,6 +7,9 @@ import { SHIP_PART_SLOTS } from '../progress/shipParts'
 import { PartArtwork } from './EquipmentArtwork'
 import { ShipResistanceReadout } from './ShipResistanceReadout'
 import { getShipPartRarityLabel, getShipPartSlotLabel, getShipPartStatSummary } from './shipPartPresentation'
+import { PilotTraining } from './PilotTraining'
+import type { PilotSkillId } from '../progress/pilotSkills'
+import { BASE_RADAR_RANGE } from '../domain/flightRadar'
 import './ShipStatisticsPanel.css'
 
 const ShipPreviewCanvas = lazy(() => import('../renderer/ShipPreviewCanvas').then(module => ({ default: module.ShipPreviewCanvas })))
@@ -17,9 +20,12 @@ interface ShipStatisticsPanelProps {
   language: 'pl' | 'en'
   quality: GraphicsQuality
   onClose: () => void
+  onLearn: (skill: PilotSkillId) => void
+  onOpenInventory?: () => void
 }
 
-export function ShipStatisticsPanel({ progress, telemetry, language, quality, onClose }: ShipStatisticsPanelProps) {
+export function ShipStatisticsPanel({ progress, telemetry, language, quality, onClose, onLearn, onOpenInventory }: ShipStatisticsPanelProps) {
+  const [view, setView] = useState<'stats' | 'training'>('stats')
   const pl = language === 'pl'
   const stats = getShipStatistics(progress, telemetry)
   const number = (value: number, digits = 0) => value.toLocaleString(language, { maximumFractionDigits: digits })
@@ -36,6 +42,8 @@ export function ShipStatisticsPanel({ progress, telemetry, language, quality, on
     [pl ? 'Połowa mocy / Shift' : 'Half thrust / Shift', `${number(stats.halfSpeed)} m/s`],
     [pl ? 'Aktualna prędkość' : 'Current speed', `${number(stats.speed)} m/s`],
     [pl ? 'Ładowanie uniku' : 'Dodge recharge', `${number(stats.dodgeRemaining, 2)} / ${number(stats.dodgeCooldown, 2)} s`],
+    [pl ? 'Zwrotność' : 'Handling', `${number(100 + (stats.bonuses.handlingPercent ?? 0))}%`],
+    [pl ? 'Zasięg radaru' : 'Radar range', `${number(BASE_RADAR_RANGE * (1 + (stats.bonuses.sensorRangePercent ?? 0) / 100))} m`],
   ]
   return <div className="ship-stats-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="ship-stats-panel" role="dialog" aria-modal="true" aria-labelledby="ship-stats-title">
@@ -44,7 +52,13 @@ export function ShipStatisticsPanel({ progress, telemetry, language, quality, on
         <span className="ship-stats-level">{pl ? 'POZIOM PILOTA' : 'PILOT LEVEL'} <strong>{stats.level}</strong></span>
         <button type="button" className="ship-stats-close" onClick={onClose} autoFocus aria-label={pl ? 'Zamknij statystyki statku' : 'Close ship statistics'} title="C / Esc">×</button>
       </header>
-      <div className="ship-stats-body">
+      <nav className="ship-sheet-tabs" aria-label={pl ? 'Widoki pokładu' : 'Ship views'}>
+        <button type="button" aria-pressed={view === 'stats'} onClick={() => setView('stats')}>{pl ? 'Parametry' : 'Ship stats'}</button>
+        <button type="button" aria-pressed={view === 'training'} onClick={() => setView('training')}>{pl ? 'Rozwój pilota' : 'Pilot training'}</button>
+        {onOpenInventory && <button type="button" onClick={onOpenInventory}>{pl ? 'Ekwipunek' : 'Inventory'} <kbd>I</kbd></button>}
+      </nav>
+      {view === 'training' ? <PilotTraining level={stats.level} learned={progress.pilotSkills} language={language} onLearn={onLearn}/>
+        : <div className="ship-stats-body">
         <section className="ship-stats-numbers" aria-label={pl ? 'Parametry statku' : 'Ship parameters'}>
           <h3>{pl ? 'PARAMETRY LOTU I WALKI' : 'FLIGHT AND COMBAT'}</h3>
           <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
@@ -69,7 +83,7 @@ export function ShipStatisticsPanel({ progress, telemetry, language, quality, on
             </article>
           })}
         </section>
-      </div>
+      </div>}
       <footer className="ship-stats-footer">{pl ? 'C / ESC · ZAMKNIJ' : 'C / ESC · CLOSE'}</footer>
     </section>
   </div>

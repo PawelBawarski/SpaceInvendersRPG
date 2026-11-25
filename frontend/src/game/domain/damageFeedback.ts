@@ -4,6 +4,7 @@ export interface DamageSource {
   position: SectorPosition
   label: { pl: string; en: string }
   kind: 'weapon' | 'collision' | 'heat'
+  impact?: { position: SectorPosition; normal: SectorPosition }
 }
 
 export type DamageSide = 'front' | 'right' | 'back' | 'left' | 'above' | 'below'

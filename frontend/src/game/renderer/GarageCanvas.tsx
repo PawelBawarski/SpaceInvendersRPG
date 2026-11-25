@@ -1,3 +1,4 @@
+import { createPlanetLandscape } from './PlanetLandscape'
 import { useEffect, useRef } from 'react'
 import {
   Color3,
@@ -17,16 +18,20 @@ import {
   Vector3,
 } from '@babylonjs/core'
 import { SHIP_PART_SLOTS, type EquippedPartRarities } from '../progress/shipParts'
+import type { GraphicsSettings } from '../progress/gameSettings'
 import { HANGAR_CREW, type HangarCrewMember } from '../hangar/crew'
-import { ORION_PLANETS } from '../domain/exploration'
-import { createShipVisual } from './shipVisual'
+import type { PlanetSite } from '../domain/exploration'
+import { createShipVisual, setShipDrivePower, type ShipDrive } from './shipVisual'
 import { createPlanetVisual } from './spaceEnvironment'
 import { HANGAR_DEPARTURE_DURATION, HANGAR_LANDING_DURATION, sampleHangarDeparture } from '../simulation/StationApproach'
 import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY, sampleDepartureCompression, sampleDepartureLandingGear, sampleHangarLanding, type HangarLandingStage } from '../simulation/HangarLanding'
 import { createLandingGear } from './LandingGear'
-import { spaceEffectsProfile } from './spaceEffectsProfile'
+import { getHardwareScaling, spaceEffectsProfile } from './spaceEffectsProfile'
 
 interface GarageCanvasProps {
+  surfacePlanet?: PlanetSite
+  previewPlanet: PlanetSite
+  graphics: GraphicsSettings
   equippedPartRarities: EquippedPartRarities
   entering?: boolean
   paused?: boolean
@@ -38,7 +43,7 @@ interface GarageCanvasProps {
   onDeparted?: () => void
 }
 
-export function GarageCanvas({ equippedPartRarities, entering = true, paused = false, departing = false, departureReady = false, onReady, onLanded, onLandingStageChange, onDeparted }: GarageCanvasProps) {
+export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedPartRarities, entering = true, paused = false, departing = false, departureReady = false, onReady, onLanded, onLandingStageChange, onDeparted }: GarageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const enteringRef = useRef(entering)
   const pausedRef = useRef(paused)
@@ -58,12 +63,16 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
   const weaponRarity = equippedPartRarities.weapon
   const shieldRarity = equippedPartRarities.shield
   const engineRarity = equippedPartRarities.engine
+  const armorRarity = equippedPartRarities.armor
+  const reactorRarity = equippedPartRarities.reactor
+  const scannerRarity = equippedPartRarities.scanner
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
     const engine = new Engine(canvas, true, { adaptToDeviceRatio: true })
+    engine.setHardwareScalingLevel(getHardwareScaling(graphics))
     const scene = new Scene(engine)
     scene.clearColor = new Color4(0.004, 0.009, 0.018, 1)
 
@@ -74,29 +83,36 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
     const ambient = new HemisphericLight('hangarAmbient', new Vector3(0, 1, 0), scene)
     ambient.diffuse = new Color3(0.61, 0.76, 0.89)
     ambient.groundColor = new Color3(0.06, 0.09, 0.14)
-    ambient.intensity = 0.38
-    const keyLight = new PointLight('hangarKeyLight', new Vector3(-5, 9, -4), scene)
-    keyLight.diffuse = new Color3(0.71, 0.86, 1)
-    keyLight.intensity = 1.1
-    const rimLight = new PointLight('hangarRimLight', new Vector3(5, 5, 8), scene)
-    rimLight.diffuse = new Color3(1, 0.58, 0.28)
-    rimLight.intensity = 0.65
-    const padLight = new SpotLight('hangarPadLight', new Vector3(-3, 8, -1), new Vector3(0.2, -1, 0.3), 1.4, 2, scene)
+    ambient.intensity = 0.31
+    const keyLight = new PointLight('hangarKeyLight', new Vector3(-9.9, 4.68, 1), scene)
+    keyLight.diffuse = new Color3(0.58, 0.82, 1)
+    keyLight.range = 18
+    keyLight.intensity = 0.74
+    const rimLight = new PointLight('hangarRimLight', new Vector3(9.9, 4.68, 1), scene)
+    rimLight.diffuse = new Color3(1, 0.64, 0.35)
+    rimLight.range = 18
+    rimLight.intensity = 0.64
+    const padLight = new SpotLight('hangarPadLight', new Vector3(-3, 7.8, 2), new Vector3(0.31, -1, -0.06), 1.2, 2, scene)
     padLight.diffuse = new Color3(0.8, 0.92, 1)
-    padLight.intensity = 1.2
-    const shadows = new ShadowGenerator(1024, padLight)
-    shadows.usePercentageCloserFiltering = true
-    shadows.bias = 0.002
-    shadows.normalBias = 0.04
-    const effectsProfile = spaceEffectsProfile('standard')
+    padLight.intensity = 1.24
+    const quality = graphics.graphicsQuality
+    const shadows = graphics.hangarShadows ? new ShadowGenerator(quality === 'low' ? 512 : quality === 'high' ? 1536 : 1024, padLight) : null
+    if (shadows) {
+      shadows.usePercentageCloserFiltering = quality !== 'low'
+      shadows.bias = 0.002
+      shadows.normalBias = 0.04
+    }
+    const effectsProfile = spaceEffectsProfile(quality)
     const glow = new GlowLayer('hangarGlow', scene, { mainTextureRatio: effectsProfile.glowRatio, blurKernelSize: effectsProfile.glowKernel })
     glow.intensity = effectsProfile.glowIntensity
+    glow.isEnabled = graphics.bloom
 
     const floorMaterial = createMaterial(scene, 'hangarFloorMaterial', '#111d28', '#101c26')
     const wallMaterial = createMaterial(scene, 'hangarWallMaterial', '#182630', '#111c25')
     const trimMaterial = createMaterial(scene, 'hangarTrimMaterial', '#425967', '#243b4a')
     const warmLight = createMaterial(scene, 'hangarWarmLightMaterial', '#ffc071', '#f0a750')
     const coolLight = createMaterial(scene, 'hangarCoolLightMaterial', '#74dfff', '#52c9f5')
+    const guideLight = createMaterial(scene, 'hangarApproachGuideMaterial', '#96eafb', '#459cb3')
     warmLight.emissiveColor = Color3.FromHexString('#ffb968').scale(0.9)
     coolLight.emissiveColor = Color3.FromHexString('#68dfff').scale(0.95)
 
@@ -115,13 +131,36 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
     landingPad.receiveShadows = true
     createLandingMarkings(scene, trimMaterial, coolLight)
     createHangarStructure(scene, wallMaterial, trimMaterial, warmLight, coolLight)
+    const portal = MeshBuilder.CreateTorus('hangarAperture', { diameter: 13.6, thickness: .3, tessellation: quality === 'low' ? 20 : 36 }, scene)
+    portal.rotation.x = Math.PI / 2
+    portal.scaling.z = .48
+    portal.position.set(0, 2.37, -9.1)
+    portal.material = trimMaterial
+    const portalSigns = [-1, 1].map(side => {
+      const marker = MeshBuilder.CreateTube('hangarApproachLights' + side, { path: [
+        new Vector3(side * 6.55, 2.4, -9.3), new Vector3(side * 6.1, 3.6, -9.3),
+        new Vector3(side * 4.25, 4.75, -9.3), new Vector3(side * 1.8, 5.36, -9.3),
+      ], radius: .045, tessellation: 6 }, scene)
+      marker.material = guideLight
+      return marker
+    })
+    const apertureLight = new SpotLight('hangarApertureLight', new Vector3(0, 5.4, -8.7),
+      new Vector3(0, -1, .55).normalize(), 1.52, 2, scene)
+    apertureLight.diffuse = new Color3(.38, .79, .95)
+    apertureLight.range = 17
+    apertureLight.intensity = .33
     createWorkshopDetails(scene, floorMaterial, trimMaterial, warmLight, coolLight)
-    createPlanetView(scene, glow)
+    if (surfacePlanet) createPlanetLandscape(scene, surfacePlanet, quality)
+    else createPlanetView(scene, glow, previewPlanet, graphics)
+    canvas.dataset.surfacePlanet = surfacePlanet?.id ?? ''
 
     const ship = createShipVisual(scene, {
       weapon: weaponRarity,
       shield: shieldRarity,
       engine: engineRarity,
+      armor: armorRarity,
+      reactor: reactorRarity,
+      scanner: scannerRarity,
     })
     ship.name = 'hangarPlayerShip'
     ship.position.set(0, hasLandedRef.current ? HANGAR_LANDED_Y : 1.3, hasLandedRef.current ? 1.5 : -9)
@@ -131,12 +170,12 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
     canvas.dataset.gearDeployment = hasLandedRef.current ? '1.000' : '0.000'
     canvas.dataset.gearCompression = hasLandedRef.current ? LANDING_GEAR_GEOMETRY.loadedCompression.toFixed(4) : '0.0000'
     canvas.dataset.landingStage = hasLandedRef.current ? 'landed' : 'approach'
-    for (const mesh of ship.getChildMeshes()) shadows.addShadowCaster(mesh)
+    for (const mesh of ship.getChildMeshes()) if (!mesh.name.startsWith('shipEngineExhaust')) shadows?.addShadowCaster(mesh)
     const crew = HANGAR_CREW.map((member) => createHangarCrewMember(scene, member))
-    for (const member of crew) {
-      for (const mesh of member.getChildMeshes()) shadows.addShadowCaster(mesh)
+    for (const member of crew) for (const mesh of member.getChildMeshes()) {
+      if (!mesh.name.includes('HoverRing')) shadows?.addShadowCaster(mesh)
     }
-    const shadowMap = shadows.getShadowMap()
+    const shadowMap = shadows?.getShadowMap()
     if (shadowMap) shadowMap.refreshRate = hasLandedRef.current ? 0 : 1
     let idleElapsed = 0
     let landingElapsed = hasLandedRef.current ? HANGAR_LANDING_DURATION : 0
@@ -145,10 +184,15 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
     let departureProgress = 0
     let departureCompleted = false
     const departureTarget = new Vector3()
+    const drive = ship.metadata.drive as ShipDrive
     let landingStage: HangarLandingStage = hasLandedRef.current ? 'landed' : 'approach'
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(engine.getDeltaTime() / 1000, 0.1)
       idleElapsed += dt
+      const transit = departureRef.current.departing || !hasLandedRef.current
+      const pulse = transit ? .6 + .4 * Math.sin(idleElapsed * 5.6) ** 2 : .33
+      apertureLight.intensity = .28 + pulse * .38
+      for (const marker of portalSigns) marker.visibility = .35 + pulse * .65
       if (departureRef.current.departing && enteringRef.current && !pausedRef.current) {
         departureProgress = Math.min(departureRef.current.ready ? 1 : 0.82, departureProgress + Math.max(0, engine.getDeltaTime() / 1000) / HANGAR_DEPARTURE_DURATION)
         const pose = sampleHangarDeparture(departureProgress)
@@ -159,8 +203,9 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
         canvas.dataset.gearCompression = compression.toFixed(4)
         ship.position.set(0, pose.y, pose.z)
         ship.rotation.y = pose.yaw
-        camera.position.set(3.4, 3.1 + 1.9 * (pose.y - HANGAR_LANDED_Y) / (1.3 - HANGAR_LANDED_Y), -16 + Math.min(0, pose.z - 1.5))
-        departureTarget.set(0, pose.y, pose.z)
+        setShipDrivePower(drive, pose.power, idleElapsed)
+        camera.position.set(3.4 + pose.forward * 5.2, 3.1 + pose.lift * 1.8, -16 - pose.forward * 4.6)
+        departureTarget.set(0, pose.y + .15, pose.z - pose.forward * 1.8)
         camera.setTarget(departureTarget)
         if (shadowMap) shadowMap.refreshRate = 1
         canvas.dataset.landingState = 'departing'
@@ -182,8 +227,10 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
         canvas.dataset.landingStage = pose.stage
         if (pose.stage !== landingStage) { landingStage = pose.stage; onLandingStageRef.current?.(pose.stage) }
         ship.position.set(0, pose.y, pose.z)
-        camera.position.set(3.4, 3.1 + (1 - pose.approach) * 2, -16 - (1 - pose.approach) * 6)
-        camera.setTarget(new Vector3(1.5, 0.4, 3))
+        setShipDrivePower(drive, p >= 1 ? 0 : (1 - p) * (.18 + (1 - pose.approach) * .36), idleElapsed)
+        camera.position.set(3.4 + (1 - pose.approach) * 4.8, 3.1 + (1 - pose.approach) * 2, -16 - (1 - pose.approach) * 6)
+        departureTarget.set(pose.approach * 1.5, .4 + .62 * (1 - pose.approach), pose.z + 1.5)
+        camera.setTarget(departureTarget)
         canvas.dataset.landingState = 'landing'
         if (p >= 1) {
           hasLandedRef.current = true
@@ -196,8 +243,10 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
         }
       }
       crew.forEach((member, index) => {
-        member.position.y = -1.08 + Math.sin(idleElapsed * 1.3 + index * 1.7) * 0.035
-        member.rotation.y = Math.sin(idleElapsed * 0.6 + index) * 0.035
+        const hover = HANGAR_CREW[index].species === 'robot'
+        member.position.y = -1.08 + Math.sin(idleElapsed * (hover ? 2.2 : 1.3) + index * 1.7) * (hover ? .095 : .026)
+        const facing = Math.atan2(camera.position.x - member.position.x, camera.position.z - member.position.z)
+        member.rotation.y = facing + (index % 3 - 1) * .15 + Math.sin(idleElapsed * .62 + index) * .065
       })
     })
 
@@ -216,7 +265,7 @@ export function GarageCanvas({ equippedPartRarities, entering = true, paused = f
       scene.dispose()
       engine.dispose()
     }
-  }, [weaponRarity, shieldRarity, engineRarity])
+  }, [weaponRarity, shieldRarity, engineRarity, armorRarity, reactorRarity, scannerRarity, surfacePlanet, previewPlanet, graphics])
 
   return (
     <canvas
@@ -234,37 +283,81 @@ function createHangarCrewMember(scene: Scene, member: HangarCrewMember): Transfo
   if (member.species === 'alien') root.scaling.setAll(1.1)
 
   const suit = createMaterial(scene, `crewSuit-${member.id}`, member.colors.suit, '#121d27')
-  suit.diffuseColor = Color3.Lerp(suit.diffuseColor, new Color3(0.1, 0.16, 0.22), 0.62)
+  suit.diffuseColor = Color3.Lerp(suit.diffuseColor, new Color3(0.1, 0.16, 0.22), .27)
+  suit.emissiveColor = suit.diffuseColor.scale(.12)
   const trim = createMaterial(scene, `crewTrim-${member.id}`, member.colors.trim, '#13202a')
-  trim.diffuseColor = trim.diffuseColor.scale(0.62)
+  trim.diffuseColor = trim.diffuseColor.scale(.88)
+  trim.emissiveColor = trim.diffuseColor.scale(.2)
   const dark = createMaterial(scene, `crewArmor-${member.id}`, '#18232c', '#0b131d')
   const visorMaterial = createMaterial(scene, `crewVisorMaterial-${member.id}`, '#102b38', '#1b617b')
+  visorMaterial.emissiveColor = new Color3(.025, .08, .108)
   visorMaterial.specularColor = new Color3(0.5, 0.75, 0.9)
   visorMaterial.specularPower = 120
-  const body = MeshBuilder.CreateBox(`crewBody-${member.id}`, { width: 0.54, height: 0.73, depth: 0.34 }, scene)
-  body.position.y = 1.02
-  body.parent = root
-  body.material = suit
+  const oval = (name: string, material: StandardMaterial, size: [number, number, number], at: [number, number, number]) => {
+    const mesh = MeshBuilder.CreateSphere(name + '-' + member.id, { diameter: 1, segments: 14 }, scene)
+    mesh.parent = root
+    mesh.scaling.set(...size)
+    mesh.position.set(...at)
+    mesh.material = material
+    mesh.isPickable = false
+    return mesh
+  }
+  if (member.species === 'robot') {
+    const optic = createMaterial(scene, 'crewRobotOptic', member.colors.trim, member.colors.trim)
+    optic.disableLighting = true
+    optic.emissiveColor = Color3.FromHexString(member.colors.trim).scale(.85)
+    suit.diffuseColor = Color3.FromHexString(member.colors.suit)
+    suit.specularPower = 88
+    oval('crewRobotCore', suit, [.91, .76, .68], [0, .98, 0])
+    oval('crewRobotUnderbody', dark, [.61, .28, .55], [0, .64, 0])
+    oval('crewRobotOpticalHousing', dark, [.68, .31, .42], [0, 1.09, .23])
+    oval('crewRobotOptics', visorMaterial, [.59, .21, .36], [0, 1.09, .29])
+    for (const side of [-1, 1]) {
+      oval('crewRobotEye' + side, optic, [.12, .105, .07], [side * .135, 1.10, .452])
+      oval('crewRobotArmJoint' + side, trim, [.22, .23, .23], [side * .44, .98, -.01])
+      oval('crewRobotServo' + side, dark, [.19, .39, .22], [side * .52, .76, .04]).rotation.z = side * .32
+      oval('crewRobotGripper' + side, suit, [.17, .17, .24], [side * .56, .6, .14])
+    }
+    const hoverRing = MeshBuilder.CreateTorus('crewHoverRing-' + member.id, { diameter: .46, thickness: .042, tessellation: 18 }, scene)
+    hoverRing.parent = root
+    hoverRing.position.y = .56
+    hoverRing.material = optic
+    return root
+  }
+  const avian = member.species === 'avian'
+  oval('crewBody', suit, [.65, .84, .43], [0, 1.04, 0])
 
   const head = MeshBuilder.CreateSphere(`crewHelmet-${member.id}`, { diameter: 0.54, segments: 16 }, scene)
+  if (avian) {
+    const hood = createMaterial(scene, 'crewAvianHood', member.colors.skin, '#332435')
+    oval('crewAvianCollar', trim, [.6, .18, .43], [0, 1.44, .01])
+    head.scaling.set(.93, 1.28, .89)
+    head.material = hood
+    for (const side of [-1, 1]) oval('crewAvianCrest' + side, suit, [.14, .36, .27], [side * .135, 1.95, -.09]).rotation.z = -side * .32
+  }
   head.position.y = 1.72
   head.parent = root
-  head.material = dark
+  head.material ??= dark
 
   const visor = MeshBuilder.CreateSphere(`crewVisor-${member.id}`, { diameter: 0.43, segments: 12 }, scene)
-  visor.scaling.set(1, 0.45, 0.4)
+  visor.scaling.set(avian ? .96 : 1, avian ? .32 : .45, .4)
   visor.position.set(0, 1.75, 0.21)
   visor.parent = root
   visor.material = visorMaterial
+  if (avian) {
+    for (const side of [-1, 1]) oval('crewAvianEye' + side, trim, [.1, .029, .046], [side * .094, 1.756, .288]).rotation.z = side * .16
+    oval('crewAvianRespirator', dark, [.19, .23, .21], [0, 1.63, .221])
+  }
 
-  const chest = MeshBuilder.CreateBox(`crewChestPlate-${member.id}`, { width: 0.44, height: 0.34, depth: 0.07 }, scene)
-  chest.parent = root
-  chest.position.set(0, 1.12, 0.2)
-  chest.material = dark
+  oval('crewChestPlate', dark, [.48, .38, .16], [0, 1.13, .19])
   const patch = MeshBuilder.CreateBox(`crewIdentityPatch-${member.id}`, { width: 0.12, height: 0.09, depth: 0.02 }, scene)
   patch.parent = root
   patch.position.set(-0.1, 1.21, 0.245)
   patch.material = trim
+  const radio = MeshBuilder.CreateBox(`crewComms-${member.id}`, { width: .095, height: .19, depth: .085 }, scene)
+  radio.parent = root
+  radio.position.set(.23, 1.28, .175)
+  radio.material = dark
   const belt = MeshBuilder.CreateBox(`crewUtilityBelt-${member.id}`, { width: 0.59, height: 0.13, depth: 0.4 }, scene)
   belt.parent = root
   belt.position.y = 0.71
@@ -300,11 +393,7 @@ function createHangarCrewMember(scene: Scene, member: HangarCrewMember): Transfo
     boot.parent = root
     boot.material = dark
 
-    const shoulder = MeshBuilder.CreateBox(`crewShoulder-${member.id}-${side}`, { width: 0.23, height: 0.22, depth: 0.31 }, scene)
-    shoulder.parent = root
-    shoulder.position.set(side * 0.34, 1.28, 0)
-    shoulder.rotation.z = side * -0.12
-    shoulder.material = trim
+    oval('crewShoulder' + side, trim, [avian ? .33 : .24, .23, .31], [side * .34, 1.29, .01]).rotation.z = side * -.12
   }
 
   const pack = MeshBuilder.CreateBox(`crewPack-${member.id}`, {
@@ -374,7 +463,9 @@ function createHangarStructure(
     }, scene)
     sideStrip.position.set(side * 10.1, 4.8, 1)
     sideStrip.material = side === -1 ? coolLight : warmLight
-
+    const housing = MeshBuilder.CreateBox(`hangarLampHousing${side}`, { width: .34, height: .22, depth: 16.2 }, scene)
+    housing.position.set(side * 10.25, 4.87, 1)
+    housing.material = trimMaterial
   }
 
   const upperBeam = MeshBuilder.CreateBox('hangarDoorBeam', { width: 21, height: 0.9, depth: 1.1 }, scene)
@@ -389,6 +480,9 @@ function createHangarStructure(
     }, scene)
     ceilingRib.position.set(0, 8.2, index * 6 - 4)
     ceilingRib.material = trimMaterial
+    const fixture = MeshBuilder.CreateBox(`hangarCeilingLamp${index}`, { width: 2.4, height: .055, depth: .25 }, scene)
+    fixture.position.set(-3, 8.015, index * 6 - 4)
+    fixture.material = coolLight
   }
 }
 
@@ -416,14 +510,19 @@ function createLandingMarkings(
   centerLine.material = trimMaterial
 }
 
-function createPlanetView(scene: Scene, glow: GlowLayer): void {
-  const planet = createPlanetVisual(scene, { ...ORION_PLANETS[0], x: -20, y: 12, z: 64, radius: 15 }, 'standard')
+function createPlanetView(scene: Scene, glow: GlowLayer, preview: PlanetSite, graphics: GraphicsSettings): void {
+  const planet = createPlanetVisual(scene, { ...preview, x: -20, y: 12, z: 64, radius: 15 }, graphics.graphicsQuality)
   planet.name = 'hangarPlanet'
   planet.rotation.z = -0.24
   const moon = createPlanetVisual(scene, {
-    ...ORION_PLANETS[1], id: 'hangar-distant-moon', color: '#8699ad', x: 9, y: 8, z: 54, radius: 1.9,
+    id: 'hangar-distant-moon', color: '#8699ad', x: 9, y: 8, z: 54, radius: 1.9,
   }, 'low')
   moon.name = 'hangarMoon'
+  if (!graphics.planetAtmospheres) {
+    for (const body of [planet, moon]) for (const mesh of body.getChildMeshes()) {
+      if (mesh.name.startsWith('atmosphere-')) mesh.setEnabled(false)
+    }
+  }
 
   const texture = new DynamicTexture('hangarWindowSky', { width: 1024, height: 512 }, scene, false)
   const context = texture.getContext()

@@ -1,4 +1,10 @@
-import type { GraphicsQuality } from '../progress/gameSettings'
+import type { GraphicsQuality, GraphicsSettings } from '../progress/gameSettings'
+
+export function getHardwareScaling(graphics: GraphicsSettings) {
+  return graphics.renderScale === null
+    ? graphics.graphicsQuality === 'low' ? 1.5 : graphics.graphicsQuality === 'high' ? 0.85 : 1
+    : 1 / graphics.renderScale
+}
 
 export function spaceEffectsProfile(quality: GraphicsQuality) {
   return {
@@ -7,7 +13,7 @@ export function spaceEffectsProfile(quality: GraphicsQuality) {
     glowKernel: 8,
     planetBudget: quality === 'high' ? 3 : quality === 'low' ? 1 : 2,
     trailCapacity: quality === 'high' ? 64 : quality === 'low' ? 24 : 40,
-    trailRate: quality === 'low' ? 18 : 30,
-    streakCount: quality === 'high' ? 12 : quality === 'low' ? 5 : 8,
+    trailRate: quality === 'low' ? 26 : quality === 'high' ? 76 : 52,
+    streakCount: quality === 'high' ? 26 : quality === 'low' ? 8 : 16,
   }
 }

@@ -8,6 +8,7 @@ import {
   findNearbyPlanet,
   findNearestPlanet,
   findNearestStation,
+  getGalaxyWorld,
   ORION_DRONES,
   ORION_PLANETS,
   ORION_SECTOR_BOUNDS,
@@ -15,6 +16,7 @@ import {
   ORION_SUN,
   VEIL_PATROL_DRONE,
 } from './exploration'
+import { PLANET_SURFACE_SPACING } from './galaxyLayout'
 
 describe('sector exploration', () => {
   it('restores saves inside enlarged planets above the surface without moving safe spawns', () => {
@@ -48,18 +50,15 @@ describe('sector exploration', () => {
     expect(calculateDroneDamage({ damagePercent: 25 })).toBe(30)
   })
 
-  it('doubles planetary spacing and sector bounds while retaining large planetary radii', () => {
-    expect(ORION_SECTOR_BOUNDS).toEqual({ minX: -560000, maxX: 560000, minY: -350000, maxY: 350000, minZ: 0, maxZ: 3000000 })
-    expect(ORION_PLANETS[0]).toMatchObject({ id: 'glass-moon', radius: 1728, x: 0, y: 0 })
-    expect(ORION_PLANETS[0].z).toBeCloseTo(27033.6)
-    expect(ORION_PLANETS).toHaveLength(60)
-    expect(ORION_DRONES).toHaveLength(3000)
+  it('retains the authored inner worlds and large planetary radii in the thinner chart', () => {
+    expect(ORION_PLANETS[0]).toMatchObject({ id: 'glass-moon', radius: 5184, x: 0, y: 0 })
+    expect(ORION_PLANETS).toHaveLength(47)
+    expect(ORION_DRONES.length).toBeGreaterThan(4000)
     expect(new Set(ORION_DRONES.map(ship => ship.faction)).size).toBe(4)
     expect(new Set(ORION_DRONES.map(ship => ship.archetype)).size).toBe(4)
-    expect(ORION_SECTOR_BOUNDS.maxX - ORION_SECTOR_BOUNDS.minX).toBeGreaterThanOrEqual(576 * 3)
-    expect(ORION_SECTOR_BOUNDS.maxY - ORION_SECTOR_BOUNDS.minY).toBeGreaterThanOrEqual(336 * 3)
-    expect(ORION_SECTOR_BOUNDS.maxZ - ORION_SECTOR_BOUNDS.minZ).toBeGreaterThanOrEqual(1720 * 3)
-    expect(ORION_PLANETS.filter(planet => planet.z > 276480)).toHaveLength(41)
+    expect(ORION_SECTOR_BOUNDS.maxX - ORION_SECTOR_BOUNDS.minX).toBe(9_600_000)
+    expect(ORION_SECTOR_BOUNDS.maxY - ORION_SECTOR_BOUNDS.minY).toBe(7_200_000)
+    expect(ORION_SECTOR_BOUNDS.maxZ - ORION_SECTOR_BOUNDS.minZ).toBe(21_600_000)
     const ids = ORION_PLANETS.map(planet => planet.id)
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toEqual(expect.arrayContaining([
@@ -71,6 +70,23 @@ describe('sector exploration', () => {
     expect(Math.max(...ORION_PLANETS.map(planet => planet.z))).toBeGreaterThan(200000)
     expect(ORION_DRONES.length).toBeGreaterThanOrEqual(70)
     expect(VEIL_PATROL_DRONE.id).toBe('veil-warden')
+  })
+
+  it('makes different, repeatable layouts for each destination in the same campaign', () => {
+    const [vesper, carina] = [getGalaxyWorld('vesper', 421), getGalaxyWorld('carina', 421)]
+    expect(getGalaxyWorld('vesper', 421).planets).toEqual(vesper.planets)
+    expect(getGalaxyWorld('vesper', 422).planets[1].x).not.toBe(vesper.planets[1].x)
+    expect(vesper.planets[1].x).not.toBe(carina.planets[1].x)
+    expect(vesper.sun.id).not.toBe(carina.sun.id)
+    for (const world of [vesper, carina]) {
+      expect(world.planets).toHaveLength(63)
+      expect(world.planets.every(planet => planet.id.startsWith(world.galaxy.id))).toBe(true)
+      for (const [index, planet] of world.planets.entries()) {
+        for (const other of world.planets.slice(index + 1)) {
+          expect(distanceBetween(planet, other)).toBeGreaterThan(planet.radius + other.radius + PLANET_SURFACE_SPACING)
+        }
+      }
+    }
   })
 
   it('returns only the nearest hangar independently of the tracked destination', () => {
@@ -88,7 +104,7 @@ describe('sector exploration', () => {
 
   it('puts a reachable distant sun beyond the populated routes and its heat zone outside settlements', () => {
     expect(distanceBetween({ x: 0, y: 0, z: 0 }, ORION_SUN)).toBeGreaterThan(380000)
-    expect(ORION_SUN.radius).toBe(192000)
+    expect(ORION_SUN.radius).toBe(576000)
     expect(ORION_SUN.heatRange).toBe(20000)
     expect(ORION_SUN.z + ORION_SUN.radius).toBeLessThan(ORION_SECTOR_BOUNDS.maxZ)
     expect(ORION_SUN.x + ORION_SUN.radius).toBeLessThan(ORION_SECTOR_BOUNDS.maxX)
@@ -126,7 +142,7 @@ describe('sector exploration', () => {
       const planet = ORION_PLANETS[index]
       for (const neighbor of ORION_PLANETS.slice(index + 1)) {
         expect(distanceBetween(planet, neighbor), `${planet.id} / ${neighbor.id}`)
-          .toBeGreaterThan(planet.radius + neighbor.radius + 4.8)
+          .toBeGreaterThan(planet.radius + neighbor.radius + PLANET_SURFACE_SPACING)
       }
     }
     expect(findPlanetCollision({ x: 0, y: 0, z: 0 })).toBeNull()
