@@ -1,0 +1,161 @@
+.ship-status-hud {
+  position: fixed;
+  z-index: 12;
+  left: 24px;
+  bottom: 52px;
+  display: grid;
+  width: min(248px, calc(100vw - 48px));
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid rgba(123, 163, 184, 0.23);
+  border-top-color: rgba(140, 188, 207, 0.45);
+  border-radius: 3px;
+  color: #dbe9f1;
+  background: linear-gradient(135deg, rgba(10, 19, 28, 0.97), rgba(3, 8, 14, 0.95));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), inset 0 1px rgba(174, 223, 241, 0.04);
+  pointer-events: none;
+}
+
+.ship-status-meter {
+  --status-start: #287da6;
+  --status-end: #88e2f4;
+  --status-glow: rgba(91, 202, 242, 0.24);
+  min-width: 0;
+}
+
+.ship-status-hull {
+  --status-start: #ae3f4c;
+  --status-end: #f18b7b;
+  --status-glow: rgba(241, 113, 99, 0.2);
+}
+
+.ship-status-dodge {
+  --status-start: #9c6629;
+  --status-end: #efbc70;
+  --status-glow: rgba(239, 173, 88, 0.2);
+}
+
+.ship-status-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.ship-status-label > span {
+  min-width: 0;
+  color: #9fbdcb;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ship-status-label small {
+  color: #687f8e;
+  font: inherit;
+  letter-spacing: 0.04em;
+}
+
+.ship-status-label strong {
+  flex: none;
+  color: #eff8fc;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.ship-status-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(160, 192, 212, 0.14);
+  border-radius: 1px;
+  background: #111b26;
+}
+
+.ship-status-track::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(2, 7, 12, 0.68) calc(10% - 1px), rgba(2, 7, 12, 0.68) 10%);
+}
+
+.ship-status-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--status-start), var(--status-end));
+  box-shadow: 0 0 10px var(--status-glow);
+  transition: width 100ms linear;
+}
+
+.ship-status-dodge .ship-status-track {
+  height: 6px;
+}
+
+.ship-status-dodge .ship-status-label strong {
+  color: #c3a174;
+}
+
+.ship-status-dodge.is-ready .ship-status-label strong {
+  color: #f3cb8e;
+}
+
+.ship-status-hull.is-critical .ship-status-label strong {
+  color: #ff817b;
+}
+
+.ship-status-hull.is-critical .ship-status-track {
+  border-color: rgba(255, 100, 97, 0.5);
+  box-shadow: 0 0 8px rgba(255, 100, 97, 0.12);
+}
+
+@media (max-width: 760px) {
+  .ship-status-hud {
+    left: 16px;
+    bottom: 44px;
+    width: min(224px, calc(100vw - 32px));
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .ship-status-label {
+    margin-bottom: 5px;
+  }
+
+  .ship-status-track {
+    height: 6px;
+  }
+
+  .sector-shell .ship-status-hud {
+    top: 160px;
+    bottom: auto;
+    width: min(200px, calc(100vw - 32px));
+  }
+}
+
+@media (max-height: 500px) {
+  .ship-status-hud {
+    bottom: 44px;
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .ship-status-label {
+    margin-bottom: 5px;
+  }
+
+  .ship-status-track {
+    height: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-status-fill {
+    transition: none;
+  }
+}

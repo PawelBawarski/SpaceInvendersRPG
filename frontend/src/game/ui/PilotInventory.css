@@ -1,0 +1,96 @@
+.pilot-inventory .pilot-item:not(.pilot-item-empty),
+.pilot-inventory .pilot-equipped-slot:not(.empty) {
+  border-color: color-mix(in srgb, var(--part-color) 48%, #17232e);
+}
+
+.pilot-inventory .rarity-standard { --part-color: #edf1f5; }
+.pilot-inventory .rarity-refined { --part-color: #62a8ff; }
+.pilot-inventory .rarity-prototype { --part-color: #ce8aff; }
+
+.part-artwork {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--part-color) 60%, transparent);
+  background: linear-gradient(130deg, #e8eff2, #8498a9);
+}
+
+.part-artwork::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, transparent 0 11px, #ffffff09 12px 13px);
+}
+
+.part-artwork svg { width: 100%; height: 100%; }
+.part-artwork-refined { background: radial-gradient(ellipse at 45% 55%, #3179b7, #10294b); }
+.part-artwork-prototype { background: radial-gradient(ellipse at 45% 55%, #7943a5, #28173d); }
+.part-artwork-empty { background: #0b1520; opacity: .4; filter: grayscale(1); }
+
+.pilot-inventory .pilot-item:not(.pilot-item-empty) {
+  position: relative;
+  gap: 2px;
+  padding: 4px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--part-color) 9%, #0b141e), #0b141e);
+}
+
+.pilot-inventory .pilot-item .part-artwork { height: 27px; width: 100%; }
+.pilot-inventory .pilot-item > strong { font-size: 9px; line-height: 10px; }
+.pilot-inventory .pilot-item > small { display: none; }
+.pilot-inventory .pilot-item .rarity-badge {
+  padding: 0;
+  border: 0;
+  color: var(--part-color);
+  background: transparent;
+  font-size: 7px;
+  line-height: 8px;
+  letter-spacing: .02em;
+}
+.pilot-inventory .pilot-item-actions button { min-height: 16px; line-height: 12px; }
+.pilot-inventory .pilot-item:hover { border-color: var(--part-color); }
+.pilot-inventory .pilot-item:focus-within { outline: 1px solid var(--part-color); outline-offset: 1px; }
+
+.pilot-inventory .pilot-equipped-slot {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  min-height: 72px;
+  height: 74px;
+  gap: 8px;
+}
+.pilot-inventory .pilot-equipped-slot .part-artwork { width: 48px; height: 42px; }
+.pilot-inventory .pilot-equipped-slot > .equipped-part-copy { display: grid; min-width: 0; gap: 4px; }
+.pilot-inventory .pilot-equipped-slot button { padding: 0 5px; font-size: 8px; }
+.pilot-inventory .pilot-equipped-slot .rarity-badge { color: var(--part-color); }
+.pilot-inventory .pilot-equipped-slot strong { font-size: 10px; }
+.pilot-inventory .equipped-part-copy > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 11px; }
+.pilot-inventory .pilot-equipped .ship-resistance-readout { margin-top: 8px; }
+
+.pilot-inventory .pilot-materials p {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px;
+}
+.material-artwork { width: 30px; height: 30px; }
+.pilot-material-copy { display: grid; gap: 3px; }
+.pilot-material-copy > span { font-size: 10px; line-height: 12px; }
+.pilot-material-copy small { color: #6e8495; font-size: 9px; line-height: 11px; }
+.pilot-inventory .pilot-materials strong { font-size: 11px; }
+.pilot-inventory .pilot-materials > div { gap: 6px; }
+
+@media (min-width: 761px) and (max-height: 740px) {
+  .pilot-inventory { padding: 16px 20px; }
+  .pilot-inventory .pilot-inventory-header .eyebrow { margin-top: 0; margin-bottom: 4px; }
+  .pilot-inventory .pilot-inventory-header h2 { font-size: 28px; }
+  .pilot-inventory .pilot-inventory-header > div > p:last-child { margin-top: 5px; }
+  .pilot-inventory h3 { margin-top: 14px; margin-bottom: 8px; }
+}
+
+@media (max-width: 760px) {
+  .pilot-inventory .pilot-equipped-slot { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  .pilot-inventory .pilot-materials > div { grid-template-columns: 1fr; }
+}

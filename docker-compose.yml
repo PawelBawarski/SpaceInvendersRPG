@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: neon_void
+      POSTGRES_USER: ${DATABASE_USERNAME:-neon_void}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-neon_void}
+    ports:
+      - "5432:5432"
+    volumes:
+      - neon_void_pg:/var/lib/postgresql/data
+
+volumes:
+  neon_void_pg:
