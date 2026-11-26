@@ -5,29 +5,28 @@
 .ship-recovery h1 { margin: 9px 0; font-size: clamp(23px, 3.5vw, 33px); color: #e5edf1; }
 .ship-recovery > header p { font-size: 13px; line-height: 1.7; color: #a9bcc7; max-width: 390px; }
 .recovery-exit { position: absolute; z-index: 3; right: 30px; top: 30px; width: 36px; height: 36px; background: #07121bd9; border: 1px solid #496270; color: #d1e7ee; font-size: 23px; cursor: pointer; }
-.recovery-console { position: absolute; z-index: 2; right: 32px; top: 50%; transform: translateY(-35%); width: 360px; padding: 24px; border: 1px solid #49606b88; border-top-color: #ad976d; background: linear-gradient(135deg,#0c1b24f2,#071019f5); box-shadow: 0 18px 90px #0008; }
+.recovery-console { position: absolute; z-index: 2; right: clamp(18px, 3.2vw, 56px); top: 50%; transform: translateY(-44%); width: 400px; padding: 22px; border: 1px solid #405665; border-top-color: #d7a66b; border-radius: 10px; background: linear-gradient(150deg,#13212cf7,#0a121bf7 62%); box-shadow: 0 20px 90px #000b; }
 .recovery-console > span { color: #e6c395; font-size: 11px; letter-spacing: .06em; }
 .recovery-console h2 { margin: 9px 0 7px; font-size: 19px; color: #e8f3f7; }
-.recovery-console p { color: #8fa7b5; font-size: 12px; line-height: 1.7; }
-.repair-circuits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 22px 0; }
-.repair-circuits button { padding: 8px 5px; display: grid; justify-items: center; gap: 8px; background: #07131ddd; border: 1px solid #344955; color: #b5cbd5; cursor: pointer; }
-.repair-circuits button:hover:not(:disabled) { border-color: #d9b77d; background: #152633; }
-.repair-circuits svg { width: 70px; max-width: 100%; height: auto; fill: #536976; }
-.circuit-ring { fill: none; stroke: #30434d; stroke-width: 1; }
-.circuit-contact { stroke: #efca83; stroke-width: 5; fill: none; }
-.circuit-conduit { stroke: #789aab; stroke-width: 5; fill: none; transition: transform .16s ease-out; }
-.repair-circuits strong { font-size: 11px; font-weight: 500; }
-.repair-circuits small { color: #bfd6e1; font-size: 11px; }
-.repair-circuits button.repaired { border-color: #547a68; color: #9dccb0; }
-.repaired .circuit-conduit { stroke: #90d7ac; }
-.repair-circuits .repaired small { color: #a6ebbc; font-size: 11px; }
-.recovery-launch { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 12px; border: 1px solid #8a7958; background: #352d20; color: #eed6a6; font-size: 12px; cursor: pointer; }
+.recovery-console p { color: #b1c4ce; font-size: 13px; line-height: 1.52; margin-block: 6px 10px; }
+.repair-circuits { position: relative; aspect-ratio: 328 / 125; margin: 12px 0 16px; border: 1px solid #304753; border-radius: 6px; overflow: hidden; background: radial-gradient(circle at 1px 1px,#43576160 1px,transparent 1.3px) 0 0/9px 9px, #071219; }
+.repair-circuits button { position: absolute; display: grid; place-items: center; padding: 0; width: 20.73%; aspect-ratio: 1; top: 13.6%; transform: translateX(-50%); background: #0d1d27; border: 1px solid #486473; border-radius: 6px; color: #b5cbd5; cursor: pointer; }
+.repair-circuits button:hover { border-color: #d9b77d; background: #152633; }
+.repair-circuits svg { display: block; width: 100%; fill: #435f6b; }
+.repair-circuits .circuit-board-traces { position: absolute; inset: 0; stroke: #36525c; stroke-width: 2; fill: none; }
+.circuit-board-traces .powered-trace, .powered .circuit-contact, .powered .circuit-conduit { stroke: #a9f0bd; filter: drop-shadow(0 0 3px #71ce89b0); }
+.circuit-ring { fill: none; stroke: #385867; stroke-width: 2; stroke-dasharray: 3 3; }
+.circuit-contact { stroke: #e7b471; stroke-width: 5; fill: none; }
+.circuit-conduit { stroke: #96b0bf; stroke-width: 5; fill: none; transition: transform .16s ease-out; }
+.repair-circuits button.aligned { border-color: #b9905e; }
+.repair-circuits button.powered { border-color: #78b58e; background: #122b2a; }
+.recovery-launch { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 13px 12px; border: 1px solid #d9ae7f; border-radius: 5px; background: linear-gradient(110deg,#efc590,#d99b61); color: #1c1614; font-size: 13px; font-weight: 750; cursor: pointer; }
 .recovery-launch:disabled { opacity: .35; cursor: default; }
 .recovery-launch-status { position: absolute; z-index: 4; bottom: 60px; left: 50%; transform: translateX(-50%); width: min(340px,80vw); text-align: center; color: #bfdce8; font: 11px monospace; }
 .recovery-launch-status [role=progressbar] { margin-top: 15px; height: 4px; background: #50657655; }
 .recovery-launch-status i { display: block; height: 100%; background: #9ad8e4; }
 .recovery-fade { position: absolute; z-index: 5; inset: 0; background: #02060b; pointer-events: none; }
-@media(max-width: 800px) { .ship-recovery > header { left: 20px; top: 22px; max-width: calc(100% - 80px); } .ship-recovery h1 { font-size: 25px; margin: 10px 0; } .ship-recovery > header p { font-size: 11px; max-width: 280px; } .recovery-console { top: auto; bottom: 18px; right: 18px; transform: none; width: min(340px,calc(100% - 36px)); padding: 18px; } .recovery-console h2 { font-size: 18px; } .repair-circuits { margin: 14px 0; } .repair-circuits svg { width: 56px; } .recovery-exit { top: 22px; right: 18px; } }
+@media(max-width: 800px) { .ship-recovery > header { left: 20px; top: 22px; max-width: calc(100% - 80px); } .ship-recovery h1 { font-size: 25px; margin: 10px 0; } .ship-recovery > header p { font-size: 11px; max-width: 280px; } .recovery-console { top: auto; bottom: 18px; right: 18px; transform: none; width: min(380px,calc(100% - 36px)); padding: 18px; } .recovery-console h2 { font-size: 18px; } .recovery-exit { top: 22px; right: 18px; } }
 
 .recovery-console { max-height: min(650px, 78dvh); overflow-y: auto; overscroll-behavior: contain; }
 .recovery-task-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin: 11px 0; }
@@ -38,9 +37,18 @@
 .recovery-tuning label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px; color: #d7eaf3; font-size: 12px; }
 .recovery-tuning label output { color: #9fe5bc; font-variant-numeric: tabular-nums; }
 .recovery-tuning input { grid-column: 1 / -1; width: 100%; accent-color: #79d4ed; }
+.reactor-oscilloscope { padding: 4px 8px; background: #06131a; border: 1px solid #2b4857; border-radius: 6px; }
+.reactor-oscilloscope svg { display: block; width: 100%; height: 70px; fill: none; }
+.reactor-grid { stroke: #28434b; stroke-width: .7; }
+.reactor-reference { stroke: #68bacf; stroke-dasharray: 3 3; stroke-width: 1; }
+.reactor-actual { stroke: #f2bb79; stroke-width: 1.7; }
+.reactor-oscilloscope[data-tuned='true'] .reactor-actual { stroke: #a5efbc; filter: drop-shadow(0 0 2px #80b8a2); }
+.reactor-lock { height: 5px; width: 100%; accent-color: #94e6b1; }
 .recovery-ignition-pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.recovery-ignition-pads button { font-size: 17px; font-weight: 650; min-height: 36px; }
+.recovery-ignition-pads button { font-size: 16px; font-weight: 650; min-height: 45px; }
 .recovery-ignition-readout { min-height: 33px; display: grid; place-items: center; color: #ffe1a5; background: #121e2a; border: 1px solid #354d61; border-radius: 5px; font-size: 13px; }
 .recovery-task-action:disabled, .recovery-ignition-pads button:disabled { opacity: .56; }
+.recovery-ignition-pads button[data-pulse='true'] { opacity: 1; border-color: #f9d49a; color: #19110b; background: #edbb75; box-shadow: inset 0 0 12px #f8d9a7, 0 0 17px #d9966480; }
+.recovery-ignition-readout[data-failed='true'] { color: #ffb19b; border-color: #91534b; }
 @media (max-height: 580px) { .recovery-console { max-height: 71dvh; } }
-@media(max-height: 560px) and (min-width: 801px) { .recovery-console { top: 80px; transform: none; padding: 15px; } .repair-circuits { margin: 10px 0; } .repair-circuits svg { width: 48px; } }
+@media(max-height: 560px) and (min-width: 801px) { .recovery-console { top: 80px; transform: none; padding: 15px; } }

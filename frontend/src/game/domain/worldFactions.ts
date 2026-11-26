@@ -1,3 +1,4 @@
+import { localizedText, type LocalizedText } from '../i18n'
 import type { DroneSite, SectorPosition } from './exploration'
 import type { MissionId } from '../missions/definitions'
 
@@ -5,7 +6,7 @@ export type FactionId = 'meridian' | 'nacre' | 'null-cult' | 'ashen-legion'
 export type ShipArchetype = 'scout' | 'interceptor' | 'bomber' | 'frigate'
 
 export interface FactionDefinition {
-  name: { pl: string; en: string }
+  name: LocalizedText
   color: string
   accent: string
   damageMultiplier: number
@@ -23,19 +24,19 @@ export interface CombatShipProfile {
 
 export const FACTIONS: Readonly<Record<FactionId, FactionDefinition>> = {
   meridian: {
-    name: { pl: 'Rozłam Meridian', en: 'Meridian Secession' },
+    name: localizedText(text => text.factions.meridianSecession),
     color: '#3f6e92', accent: '#78cfff', damageMultiplier: 1, healthMultiplier: 1,
   },
   nacre: {
-    name: { pl: 'Korsarze Nacre', en: 'Nacre Corsairs' },
+    name: localizedText(text => text.factions.nacreCorsairs),
     color: '#327d76', accent: '#73edd3', damageMultiplier: 0.9, healthMultiplier: 0.9,
   },
   'null-cult': {
-    name: { pl: 'Kult Pustego Chóru', en: 'Cult of the Null Choir' },
+    name: localizedText(text => text.factions.cultOfTheNullChoir),
     color: '#65508d', accent: '#c092ff', damageMultiplier: 1.15, healthMultiplier: 1,
   },
   'ashen-legion': {
-    name: { pl: 'Legion Popiołu', en: 'Ashen Legion' },
+    name: localizedText(text => text.factions.ashenLegion),
     color: '#8f5141', accent: '#ffad67', damageMultiplier: 1.25, healthMultiplier: 1.3,
   },
 }

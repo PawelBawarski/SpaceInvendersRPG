@@ -38,15 +38,7 @@
   position: fixed;
   z-index: -2;
   inset: 0;
-  background-image:
-    linear-gradient(100deg, rgba(3, 8, 17, 0.96) 0%, rgba(3, 8, 17, 0.78) 36%, transparent 76%),
-    radial-gradient(ellipse at 77% 8%, rgba(41, 133, 171, 0.3), transparent 54%),
-    radial-gradient(ellipse at 58% 76%, rgba(74, 52, 122, 0.3), transparent 48%),
-    radial-gradient(ellipse at 96% 90%, rgba(26, 95, 108, 0.2), transparent 45%),
-    radial-gradient(1px 1px at 21px 37px, rgba(210, 237, 255, 0.8) 80%, transparent),
-    radial-gradient(1px 1px at 87px 91px, rgba(112, 191, 215, 0.65) 80%, transparent),
-    radial-gradient(1.5px 1.5px at 134px 56px, rgba(236, 225, 194, 0.75) 80%, transparent);
-  background-size: auto, auto, auto, auto, 137px 169px, 223px 193px, 307px 283px;
+  background: linear-gradient(105deg,#050c16f7,#080e19cf), url('./assets/neon-void-debris-orbit.jpg') 70% center / cover no-repeat;
   pointer-events: none;
 }
 
@@ -54,46 +46,7 @@
   padding-bottom: 92px;
 }
 
-.main-menu::after {
-  content: "";
-  position: fixed;
-  z-index: -1;
-  top: 50%;
-  left: 79%;
-  width: clamp(420px, 44vw, 840px);
-  aspect-ratio: 1;
-  border: 1px solid rgba(125, 211, 234, 0.5);
-  border-radius: 50%;
-  background:
-    radial-gradient(ellipse at 5% 21%, rgba(162, 220, 230, 0.55), transparent 25%),
-    radial-gradient(ellipse at 1% 22%, transparent 23%, rgba(1, 5, 13, 0.96) 76%),
-    repeating-linear-gradient(169deg, #355b69 0 4px, #1c3545 8px 20px, #213c4b 24px 39px, #345564 44px 58px);
-  box-shadow:
-    inset 15px 5px 28px rgba(140, 225, 242, 0.28),
-    inset -80px -40px 90px #02050b,
-    0 0 8px rgba(130, 225, 246, 0.22),
-    0 0 80px rgba(48, 139, 173, 0.17);
-  transform: translate(-50%, -50%) rotate(-18deg);
-  pointer-events: none;
-}
 
-.menu-grid {
-  position: fixed;
-  z-index: 0;
-  top: 50%;
-  left: 79%;
-  width: min(96vw, 1600px);
-  aspect-ratio: 1;
-  border: 1px solid rgba(152, 211, 221, 0.26);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 9px rgba(122, 191, 212, 0.045),
-    0 0 0 24px rgba(122, 191, 212, 0.05),
-    0 0 0 30px rgba(122, 191, 212, 0.06),
-    0 0 0 48px rgba(122, 191, 212, 0.025);
-  transform: translate(-50%, -50%) rotate(-23deg) scaleY(0.32);
-  pointer-events: none;
-}
 
 .menu-content {
   position: relative;
@@ -240,25 +193,39 @@
   letter-spacing: 0.16em;
 }
 
-.language-button {
-  min-width: 44px;
-  min-height: 44px;
-  border: 1px solid #536170;
-  border-radius: 50%;
-  color: #dfe9f6;
-  background: transparent;
-  cursor: pointer;
-}
-
 .title-content {
   padding-top: clamp(56px, 9vh, 108px);
   padding-bottom: 56px;
 }
 
+.main-menu.title-screen::before {
+  background: linear-gradient(90deg, #030609 0%, #030609ad 28%, #03060912 63%),
+    linear-gradient(0deg, #030609 0%, transparent 25%), url('./assets/neon-void-debris-orbit.jpg') 65% center / cover no-repeat;
+}
+
+.title-screen .title-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100dvh;
+  width: min(480px, calc(100% - 48px));
+}
+
+.title-screen h1 {
+  max-width: none;
+  font-size: clamp(43px, 6vw, 84px);
+  color: #f5f5f0;
+  text-shadow: 0 8px 42px #000b;
+}
+
+.title-screen .eyebrow { color: #edc495; }
+.title-screen .lead { max-width: 350px; color: #c2ccd2; }
+
 .title-actions {
   display: grid;
   gap: 8px;
-  width: min(360px, 100%);
+  width: min(327px, 100%);
 }
 
 .title-actions .primary-action {
@@ -266,16 +233,29 @@
   min-height: 48px;
   border-radius: 6px;
   color: #101c26;
-  background: linear-gradient(112deg, #ffd496, #efa95f);
+  background: linear-gradient(112deg, #f2c79f, #e4a46b);
+  box-shadow: inset 0 1px #ffe3be, 0 12px 36px #03060980;
 }
 
 .title-actions .menu-action {
-  border-color: #4d657b;
+  min-height: 45px;
+  border-color: #5e7c8a55;
   border-radius: 6px;
-  background: linear-gradient(120deg, #162637e8, #0a1623f2);
+  background: linear-gradient(120deg, #263846b0, #111b24d9);
   color: #e1edf6;
+  letter-spacing: .015em;
 }
 .title-actions .menu-action:hover:not(:disabled) { border-color: #8dbcce; background: #173346; }
+.title-actions .menu-action > svg { color: #a6c5d2; }
+.title-actions .danger-action, .title-actions .danger-action > svg { color: #e3a99c; }
+
+@media (max-width: 720px) {
+  .main-menu.title-screen::before {
+    background: linear-gradient(0deg,#030609 15%,#030609eb 48%,#03060933 79%),
+      url('./assets/neon-void-debris-orbit.jpg') 79% top / auto 77% no-repeat;
+  }
+  .title-screen .title-content { justify-content: end; padding-block: min(40dvh, 340px) 31px; }
+}
 
 .menu-action,
 .nav-action {
@@ -322,17 +302,6 @@
   color: #7f8c9c;
   font-size: 11px;
   letter-spacing: 0.1em;
-}
-
-.title-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: min(360px, 100%);
-  margin-top: 20px;
-  color: #7f8c9c;
-  font-size: 11px;
-  letter-spacing: 0.16em;
 }
 
 .campaign-nav {
@@ -645,34 +614,9 @@
   font-size: 12px;
 }
 
-.garage-section-title {
-  margin: 22px 0 8px;
-  color: #eef5ff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 18px;
-}
 
-.garage-materials {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
 
-.garage-materials p {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
-  padding: 10px;
-  border: 1px solid rgba(193, 213, 239, 0.12);
-  color: #9eacba;
-  font-size: 12px;
-}
 
-.garage-materials strong {
-  color: #f0b96f;
-  font-variant-numeric: tabular-nums;
-}
 
 .garage-part-list {
   display: grid;
@@ -1296,19 +1240,7 @@
 
 .garage-speech-k-7 { left: 15%; bottom: 33%; }
 .garage-speech-sera-tal { left: 42%; bottom: 28%; }
-.planetary-garage:has(.hangar-crew-panel[open]) .garage-speech-bubbles { visibility: hidden; }
-.hangar-crew-panel { position: absolute; z-index: 3; left: 18px; bottom: 156px; width: min(320px, calc(100vw - 36px)); pointer-events: auto; }
-.hangar-crew-panel summary { width: max-content; padding: 8px 12px; border: 1px solid #527281; background: #0b1822f5; color: #d4ecf2; cursor: pointer; font-size: 13px; }
-.hangar-crew-panel-body { display: grid; gap: 10px; margin-top: 6px; padding: 12px; border: 1px solid #385764; background: #0b1822f5; max-height: min(260px, calc(100dvh - 210px)); overflow-y: auto; }
-.hangar-crew-roster { display: flex; flex-wrap: wrap; gap: 5px; }
-.hangar-crew-roster button { min-height: 31px; padding: 4px 8px; border: 1px solid #354e5d; background: #172733; color: #d7e6ee; cursor: pointer; font-size: 12px; }
-.hangar-crew-roster button[aria-pressed='true'] { border-color: #87bbcd; background: #243f50; }
-.hangar-crew-line { display: flex; flex-wrap: wrap; gap: 4px 9px; color: #d0e4ef; font-size: 13px; line-height: 1.45; }
-.hangar-crew-line small { color: #aac5d4; }
-.hangar-crew-line p { width: 100%; margin: 2px 0 0; }
-@media (max-width: 640px) {
-  .hangar-crew-panel { bottom: 132px; left: 10px; }
-}
+.planetary-garage :is(.garage-exit, .garage-back):disabled { opacity: .55; cursor: default; }
 
 .garage-interface-heading .eyebrow {
   margin-bottom: 8px;
@@ -1345,49 +1277,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.garage-slots {
-  display: grid;
-  gap: 6px;
-  margin-top: 14px;
-}
 
-.garage-slots h2,
-.garage-section-title {
-  margin: 8px 0 4px;
-  color: #eef5ff;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 17px;
-}
 
-.garage-slot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(193, 213, 239, 0.16);
-  border-left: 3px solid var(--rarity-color, #536170);
-  background: rgba(14, 22, 30, 0.72);
-}
 
-.garage-slot > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  align-items: center;
-}
 
-.garage-slot > div > strong {
-  min-width: 80px;
-  color: #d7e0ea;
-  font-size: 11px;
-  text-transform: uppercase;
-}
 
-.garage-slot-empty {
-  color: #7f8c9c;
-  font-size: 11px;
-}
 
 .rarity-standard { --rarity-color: #b7c3d0; }
 .rarity-refined { --rarity-color: #63d9ff; }
@@ -1408,22 +1302,8 @@
   text-transform: uppercase;
 }
 
-.garage-active-bonuses,
-.garage-empty-parts {
-  margin: 10px 0 4px;
-  color: #9eacba;
-  font-size: 11px;
-  line-height: 1.5;
-}
 
-.garage-materials {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
 
-.garage-materials p {
-  padding: 8px;
-  font-size: 11px;
-}
 
 .garage-craft {
   width: 100%;
@@ -1445,11 +1325,6 @@
   gap: 6px;
 }
 
-.garage-sell-hint {
-  margin: -4px 0 7px;
-  color: #8193a6;
-  font-size: 11px;
-}
 
 .garage-part {
   align-items: center;
@@ -2502,6 +2377,84 @@
 .app-screen-flight > * { pointer-events: auto; }
 .app-screen-flight > .pilot-progress-hud { pointer-events: none; }
 .app-screen-flight .planetary-garage { background: transparent; }
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 5px;
+  border: 1px solid #42616f;
+  border-radius: 5px;
+  background: linear-gradient(145deg,#182933,#0e1720);
+  color: #d0e5ec;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.icon-button:hover:not(:disabled), .icon-button:focus-visible {
+  border-color: #a3d2dd;
+  background: #213d48;
+  color: #f4fbfc;
+}
+.icon-button:disabled { opacity: .48; cursor: default; }
+.action-icon { display: block; flex: 0 0 auto; }
+.game-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 8px 13px;
+  border: 1px solid #50717e;
+  border-left: 2px solid #d8a676;
+  border-radius: 6px;
+  color: #f1f7f8;
+  background: linear-gradient(140deg,#21343f,#101a24 80%);
+  box-shadow: 0 9px 30px #000b, inset 0 1px #ffffff13;
+  font: 550 13px/1.45 var(--ui-font);
+  white-space: pre-line;
+  pointer-events: none;
+}
+.game-tooltip::after {
+  content: '';
+  position: absolute;
+  left: var(--tooltip-anchor);
+  width: 7px;
+  height: 7px;
+  background: #14212b;
+  border: solid #50717e;
+  border-width: 0 1px 1px 0;
+  transform: translateX(-50%) rotate(45deg);
+}
+.game-tooltip[data-side='top']::after { bottom: -5px; }
+.game-tooltip[data-side='bottom']::after { top: -5px; transform: translateX(-50%) rotate(225deg); }
+.fixed-controls {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 13px;
+  padding: 9px 11px;
+  border: 1px solid #344d5b;
+  border-radius: 6px;
+  background: #0b161f;
+}
+.fixed-controls div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; }
+.fixed-controls dd { margin: 0; text-align: right; }
+.fixed-controls kbd { font: 650 12px/1.35 var(--ui-font); color: #e7bd93; }
+
+:is(.pilot-inventory, .ship-stats-panel, .utility-panel, .space-dialog, .garage-interface, .game-pause-dialog) {
+  border-radius: 10px;
+  box-shadow: 0 20px 72px #0009, inset 0 1px #a3c1cc24;
+}
+.garage-interface .garage-part-list { margin-top: 12px; }
+.garage-toolbar .icon-button { width: 34px; min-width: 34px; min-height: 34px; }
+.garage-toolbar .icon-button > svg { width: 17px; height: 17px; }
+.garage-part-actions .icon-button, .pilot-item-actions .icon-button { min-height: 27px; min-width: 27px; }
+.garage-part-actions .icon-button > svg, .pilot-item-actions .icon-button > svg { width: 15px; height: 15px; }
+@media (max-width: 650px) {
+  .garage-toolbar .icon-button { width: 30px; min-width: 30px; min-height: 30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-button, .circuit-conduit { transition: none; }
+}
 .graphics-options {
   min-width: 0;
   margin: 12px 0 16px;

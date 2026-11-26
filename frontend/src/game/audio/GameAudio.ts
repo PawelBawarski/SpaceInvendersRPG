@@ -7,11 +7,40 @@ export interface GameAudioLevels {
   music: number
 }
 
+const SHOT_SOUND = { seconds: .24, bass: 72, metal: 204, bodyCutoff: 760, snapCutoff: 3200 } as const
+
+function buildShotBuffer(context: AudioContext): AudioBuffer {
+  const { sampleRate } = context
+  const buffer = context.createBuffer(1, Math.ceil(sampleRate * SHOT_SOUND.seconds), sampleRate)
+  const samples = buffer.getChannelData(0)
+  const bodyResponse = 1 - Math.exp(-2 * Math.PI * SHOT_SOUND.bodyCutoff / sampleRate)
+  const snapResponse = 1 - Math.exp(-2 * Math.PI * SHOT_SOUND.snapCutoff / sampleRate)
+  let seed = 49157
+  let body = 0
+  let snap = 0
+  for (let index = 0; index < samples.length; index++) {
+    const seconds = index / sampleRate
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    const noise = seed / 0x80000000 - 1
+    body += (noise - body) * bodyResponse
+    snap += (noise - snap) * snapResponse
+    const attack = Math.min(1, seconds / .0025)
+    const tail = Math.min(1, (SHOT_SOUND.seconds - seconds) / .025)
+    const thump = Math.sin(2 * Math.PI * (SHOT_SOUND.bass * seconds + .45 * (1 - Math.exp(-seconds * 75)))) * .38 * Math.exp(-seconds * 26)
+    const crack = (snap - body) * .66 * Math.exp(-seconds * 77)
+    const pressure = body * .53 * Math.exp(-seconds * 18)
+    const chamber = Math.sin(2 * Math.PI * SHOT_SOUND.metal * seconds) * .062 * Math.exp(-seconds * 33)
+    samples[index] = (thump + crack + pressure + chamber) * attack * tail
+  }
+  return buffer
+}
+
 export class GameAudio {
   private readonly context: AudioContext | null
   private readonly masterGain: GainNode | null
   private readonly shotGain: GainNode | null
   private readonly musicGain: GainNode | null
+  private shotBuffer: AudioBuffer | null = null
   private musicTimer: number | undefined
   private noteIndex = 0
   private musicStarted = false
@@ -166,20 +195,13 @@ export class GameAudio {
   }
 
   playShot(): void {
-    if (!this.context || !this.shotGain || this.context.state !== 'running') return
-
-    const now = this.context.currentTime
-    const tone = this.context.createOscillator()
-    const envelope = this.context.createGain()
-    tone.type = 'triangle'
-    tone.frequency.setValueAtTime(760, now)
-    tone.frequency.exponentialRampToValueAtTime(180, now + 0.14)
-    envelope.gain.setValueAtTime(0.24, now)
-    envelope.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
-    tone.connect(envelope)
-    envelope.connect(this.shotGain)
-    tone.start(now)
-    tone.stop(now + 0.16)
+    if (!this.context || !this.shotGain || this.context.state !== 'running' || this.disposed) return
+    this.shotBuffer ??= buildShotBuffer(this.context)
+    const shot = this.context.createBufferSource()
+    shot.buffer = this.shotBuffer
+    shot.connect(this.shotGain)
+    shot.onended = () => shot.disconnect()
+    shot.start()
   }
 
   dispose(): void {

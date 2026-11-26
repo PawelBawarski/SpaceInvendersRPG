@@ -1,3 +1,4 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArcRotateCamera,
@@ -12,7 +13,7 @@ import {
   HemisphericLight,
   Scene,
   TransformNode,
-} from '@babylonjs/core'
+} from './babylon'
 import { GameAudio } from '../audio/GameAudio'
 import { applyArmorDamage, PLAYER_WEAPON, resolveWeaponHit } from '../domain/weapon'
 import { createDamageNumber, updateDamageNumbers, type FloatingDamageNumber } from './DamageNumber'
@@ -50,7 +51,7 @@ import { ShipStatusHud } from '../ui/ShipStatusHud'
 import { createFlightEffects } from './FlightEffects'
 
 interface GameCanvasProps {
-  language: 'pl' | 'en'
+  language: GameLanguage
   mission: MissionId
   shieldLevel: number
   shipBonuses: ShipPartBonuses
@@ -82,21 +83,8 @@ const GRAPHICS_PROFILE: Record<GraphicsQuality, { hardwareScale: number; glow: n
   high: { hardwareScale: 0.85, glow: 0.8, stars: 260 },
 }
 
-const RELAY_FRAGMENT_TRANSMISSIONS = {
-  pl: [
-    '…nie dopuśćcie, by ktokolwiek uruchomił przekaźnik…',
-    '…sygnał nie idzie w przestrzeń. On coś przywołuje…',
-    '…jeśli słyszysz ten zapis, nie odpowiadaj. Odepnij przekaźnik…',
-  ],
-  en: [
-    '…do not let anyone activate the relay…',
-    '…the signal is not going out. It is calling something in…',
-    '…if you hear this, do not answer. Disconnect the relay…',
-  ],
-} as const
-
-function getFragmentTransmission(index: number, language: 'pl' | 'en'): string | undefined {
-  return RELAY_FRAGMENT_TRANSMISSIONS[language][index]
+function getFragmentTransmission(index: number, language: GameLanguage): string | undefined {
+  return gameText(language).combatScene.labels[index]
 }
 
 export function GameCanvas({
@@ -125,20 +113,12 @@ export function GameCanvas({
   const maxBossHealth = salvageMission ? 0 : signalMission ? 360 : mission === 'null-choir' ? 360 : 300
   const maxBossShield = signalMission ? 100 : maxBossHealth
   const openingTransmission = salvageMission
-    ? language === 'pl'
-      ? 'Odczyt z wraku: trzy boje zachowały urywki tej samej wiadomości.'
-      : 'Wreck log: three buoys preserved fragments of the same message.'
+    ? gameText(language).combatScene.wreckLogThreeBuoysPreservedFragments
     : signalMission
-      ? language === 'pl'
-        ? 'Źródło namierzone. Osłona rdzenia pulsuje — pociski przejdą tylko podczas przerwy.'
-        : 'Source acquired. The core shield is pulsing — shots only pass during the gaps.'
+      ? gameText(language).combatScene.sourceAcquiredTheCoreShieldIs
       : mission === 'null-choir'
-        ? language === 'pl'
-          ? 'Załoga: cel w zasięgu. Jednostka steruje zakłóceniami — tym razem nie może uciec.'
-          : 'Crew: target in range. The craft is steering the interference — it cannot escape this time.'
-      : language === 'pl'
-        ? 'Ostatni sygnał Strażnika powtarza współrzędne przekaźnika. To może być wezwanie albo przynęta.'
-        : 'The Warden’s last signal repeats the relay coordinates. It could be a distress call or a trap.'
+        ? gameText(language).combatScene.crewTargetInRangeTheCraft
+      : gameText(language).combatScene.theWardensLastSignalRepeatsThe
   const [radioLog, setRadioLog] = useState([openingTransmission])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inputRef = useRef<InputController | null>(null)
@@ -422,12 +402,8 @@ export function GameCanvas({
         setRadioLog((current) => [
           ...current.slice(-1),
           signalPulseOpen
-            ? language === 'pl'
-              ? 'Impuls otwarty — teraz! Ostrzał w rdzeń.'
-              : 'Pulse gap open — now! Fire on the core.'
-            : language === 'pl'
-              ? 'Osłona znów zamknięta. Wstrzymaj ogień i przygotuj unik.'
-              : 'Shield closed again. Hold fire and prepare to dodge.',
+            ? gameText(language).combatScene.pulseGapOpenNowFireOn
+            : gameText(language).combatScene.shieldClosedAgainHoldFireAnd,
         ])
       }
 
@@ -524,9 +500,7 @@ export function GameCanvas({
               boss.dispose(false, true)
               setRadioLog((current) => [
                 ...current.slice(-1),
-                language === 'pl'
-                  ? 'Rdzeń ucichł. Ostatni pakiet wskazuje opuszczoną stocznię Meridian.'
-                  : 'The core is silent. Its final packet points to the abandoned Meridian shipyard.',
+                gameText(language).combatScene.theCoreIsSilentItsFinal,
               ])
               grantMissionReward()
             }
@@ -537,12 +511,8 @@ export function GameCanvas({
             setRadioLog((current) => [
               ...current.slice(-1),
               signalPulseOpen
-                ? language === 'pl'
-                  ? 'Pocisk nie był zsynchronizowany z oknem. Strzelaj dopiero po otwarciu osłony.'
-                  : 'That shot was out of sync. Fire only after the shield opens.'
-                : language === 'pl'
-                  ? 'Pociski odbijają się od osłony. Czekaj na przerwę między impulsami.'
-                  : 'Shots are bouncing off the shield. Wait for the gap between pulses.',
+                ? gameText(language).combatScene.thatShotWasOutOfSync
+                : gameText(language).combatScene.shotsAreBouncingOffTheShield,
             ])
           }
           disposeProjectile(projectile)
@@ -558,12 +528,8 @@ export function GameCanvas({
               setRadioLog((current) => [
                 ...current.slice(-1),
                 mission === 'null-choir'
-                  ? language === 'pl'
-                    ? 'Null Choir traci osłonę i przyspiesza. To jego ostatnia próba.'
-                    : 'The Null Choir loses its shield and accelerates. This is its last push.'
-                  : language === 'pl'
-                    ? 'Ostrzał zmienia rytm. Strażnik reaguje na twoje manewry — ktoś nim steruje.'
-                    : 'The attack pattern just changed. The Warden is reacting to your moves — someone is piloting it.',
+                  ? gameText(language).combatScene.theNullChoirLosesItsShield
+                  : gameText(language).combatScene.theAttackPatternJustChangedThe,
               ])
             }
             if (bossHealth <= 0) {
@@ -573,12 +539,8 @@ export function GameCanvas({
               setRadioLog((current) => [
                 ...current.slice(-1),
                 mission === 'null-choir'
-                  ? language === 'pl'
-                    ? 'Null Choir ucichł. Współrzędne stoczni Meridian są czyste.'
-                    : 'The Null Choir is silent. Meridian shipyard coordinates are clear.'
-                  : language === 'pl'
-                    ? 'Transponder Strażnika zgasł. Przekaźnik odpowiedział sygnałem zwrotnym.'
-                    : 'The Warden transponder went dark. The relay answered with a return signal.',
+                  ? gameText(language).combatScene.theNullChoirIsSilentMeridian
+                  : gameText(language).combatScene.theWardenTransponderWentDarkThe,
               ])
               grantMissionReward()
             }
@@ -599,9 +561,7 @@ export function GameCanvas({
         failed = true
         setRadioLog((current) => [
           ...current.slice(-1),
-          language === 'pl'
-            ? 'Transponder awaryjny aktywny. Zapisano ostatnie współrzędne.'
-            : 'Emergency transponder active. Last coordinates recorded.',
+          gameText(language).combatScene.emergencyTransponderActiveLastCoordinatesRecorded,
         ])
         setProgress((current) => {
           const next = { ...current, lastMission: 'defeat' as const }
@@ -644,12 +604,12 @@ export function GameCanvas({
               bossShield: currentBossShield(),
               dodge: flight.dodgeCooldown,
               result: salvageMission
-                ? (language === 'pl' ? 'Dane odzyskane — nadajnik milknie' : 'Data recovered — relay goes quiet')
+                ? (gameText(language).combatScene.dataRecoveredRelayGoesQuiet)
                 : signalMission
-                  ? (language === 'pl' ? 'Rdzeń uciszony — stocznia Meridian namierzona' : 'Core silenced — Meridian shipyard acquired')
+                  ? (gameText(language).combatScene.coreSilencedMeridianShipyardAcquired)
                   : mission === 'null-choir'
-                    ? (language === 'pl' ? 'Null Choir pokonany — droga do stoczni otwarta' : 'Null Choir defeated — shipyard route open')
-                    : (language === 'pl' ? 'Zwycięstwo — rdzeń Meridian zdobyty' : 'Victory — Meridian core recovered'),
+                    ? (gameText(language).combatScene.nullChoirDefeatedShipyardRouteOpen)
+                    : (gameText(language).combatScene.victoryMeridianCoreRecovered),
               signalOpen: signalPulse?.open ?? false,
               pulseRemaining: signalPulse?.secondsToChange ?? 0,
           })
@@ -660,7 +620,7 @@ export function GameCanvas({
               boss: salvageMission ? recoveredFragments : bossHealth,
               bossShield: currentBossShield(),
               dodge: flight.dodgeCooldown,
-              result: language === 'pl' ? 'Wrak utracony — wznów misję' : 'Hull lost — retry mission',
+              result: gameText(language).combatScene.hullLostRetryMission,
               signalOpen: signalPulse?.open ?? false,
               pulseRemaining: signalPulse?.secondsToChange ?? 0,
             })
@@ -672,7 +632,7 @@ export function GameCanvas({
               bossShield: currentBossShield(),
               dodge: flight.dodgeCooldown,
               result: flight.perfectBonus > 0
-                ? (language === 'pl' ? 'PERFECT DODGE • następny cios +50%' : 'PERFECT DODGE • next hit +50%')
+                ? (gameText(language).combatScene.perfectDodgeNextHit50)
                 : '',
               signalOpen: signalPulse?.open ?? false,
               pulseRemaining: signalPulse?.secondsToChange ?? 0,
@@ -720,33 +680,12 @@ export function GameCanvas({
     engineRarity,
   ])
 
-  const copy = language === 'pl'
-    ? {
-        exit: 'Wyjdź',
-        retry: 'Wznów misję',
-        victory: 'Zwycięstwo',
-        continue: 'Leć do otwartej przestrzeni',
-        reward: 'Nagroda',
-        credits: 'KS',
-        boss: salvageMission ? 'Sygnały odzyskane' : missionDefinition.title.pl,
-        briefing: missionDefinition.briefing.pl,
-        radio: 'PRZECHWYCONY ZAPIS',
-        signalOpen: 'OSŁONA OTWARTA',
-        signalClosed: 'OSŁONA ZAMKNIĘTA',
-      }
-    : {
-        exit: 'Exit',
-        retry: 'Retry mission',
-        victory: 'Victory',
-        continue: 'Enter open space',
-        reward: 'Reward',
-        credits: 'KS',
-        boss: salvageMission ? 'Signals recovered' : missionDefinition.title.en,
-        briefing: missionDefinition.briefing.en,
-        radio: 'RECOVERED TRANSMISSION',
-        signalOpen: 'SHIELD OPEN',
-        signalClosed: 'SHIELD CLOSED',
-      }
+  const panel = gameText(language).combatScene.panel
+  const copy = {
+    ...panel,
+    boss: salvageMission ? panel.recoveredBoss : missionDefinition.title[language],
+    briefing: missionDefinition.briefing[language],
+  }
 
   const missionWon = salvageMission ? status.boss >= 3 : status.boss === 0
 
@@ -761,7 +700,7 @@ export function GameCanvas({
       <canvas
         ref={canvasRef}
         className="game-canvas"
-        aria-label="Neon Void 3D combat scene"
+        aria-label={gameText(language).combatScene.view}
         data-equipped-parts={SHIP_PART_SLOTS.filter((slot) => equippedPartRarities[slot]).join(',')}
         data-flight-distance={salvageMission ? salvageDistance.toFixed(2) : undefined}
       />
@@ -773,12 +712,12 @@ export function GameCanvas({
             <span>{Math.floor(status.boss)}/3</span>
           </div>
         ) : (
-          <section className="boss-vitals" aria-label={language === 'pl' ? 'Stan bossa' : 'Boss status'}>
+          <section className="boss-vitals" aria-label={gameText(language).combatScene.bossStatus}>
             <div className="boss-meter boss-meter-health" role="progressbar"
-              aria-label={language === 'pl' ? 'Życie bossa' : 'Boss health'}
+              aria-label={gameText(language).combatScene.bossHealth}
               aria-valuemin={0} aria-valuemax={maxBossHealth} aria-valuenow={Math.ceil(status.boss)}>
               <div className="boss-meter-label">
-                <span>{language === 'pl' ? 'ŻYCIE' : 'HEALTH'}</span>
+                <span>{gameText(language).combatScene.health}</span>
                 <b>{Math.ceil(status.boss)} / {maxBossHealth}</b>
               </div>
               <div className="boss-meter-track">
@@ -786,10 +725,10 @@ export function GameCanvas({
               </div>
             </div>
             <div className="boss-meter boss-meter-shield" role="progressbar"
-              aria-label={language === 'pl' ? 'Osłona bossa' : 'Boss shield'}
+              aria-label={gameText(language).combatScene.bossShield}
               aria-valuemin={0} aria-valuemax={maxBossShield} aria-valuenow={Math.ceil(status.bossShield)}>
               <div className="boss-meter-label">
-                <span>{language === 'pl' ? 'OSŁONA' : 'SHIELD'}</span>
+                <span>{gameText(language).combatScene.shield}</span>
                 <b>{Math.ceil(status.bossShield)} / {maxBossShield}</b>
               </div>
               <div className="boss-meter-track">

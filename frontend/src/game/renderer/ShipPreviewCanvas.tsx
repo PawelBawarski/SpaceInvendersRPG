@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { ArcRotateCamera, Color3, Color4, Engine, GlowLayer, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core'
+import { ArcRotateCamera, Color3, Color4, Engine, GlowLayer, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from './babylon'
 import type { EquippedPartRarities } from '../progress/shipParts'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import { createShipVisual } from './shipVisual'
+import { showHullDamage } from './HullDamage'
 
-interface ShipPreviewCanvasProps { rarities: EquippedPartRarities; quality: GraphicsQuality; label?: string }
+interface ShipPreviewCanvasProps { rarities: EquippedPartRarities; quality: GraphicsQuality; label: string; hullFraction?: number }
 
-export function ShipPreviewCanvas({ rarities, quality, label = 'Ship statistics 3D preview' }: ShipPreviewCanvasProps) {
+export function ShipPreviewCanvas({ rarities, quality, label, hullFraction = 1 }: ShipPreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const hull = useRef(hullFraction)
+  useEffect(() => { hull.current = hullFraction }, [hullFraction])
   const { weapon, shield, engine: engineRarity, armor, reactor, scanner } = rarities
   useEffect(() => {
     const canvas = canvasRef.current
@@ -25,6 +28,9 @@ export function ShipPreviewCanvas({ rarities, quality, label = 'Ship statistics 
     camera.wheelPrecision = 65
     camera.panningSensibility = 0
     camera.attachControl(canvas, true)
+    const viewControls = camera.movement.input
+    viewControls.inputMap = viewControls.inputMap.filter(binding => binding.source !== 'pointer')
+    viewControls.addEntry({ source: 'pointer', button: 2, interaction: 'rotate' })
     const light = new HemisphericLight('shipSheetLight', new Vector3(-0.5, 1, -0.5), scene)
     light.intensity = 1.05
     light.groundColor = new Color3(0.13, 0.21, 0.28)
@@ -41,9 +47,12 @@ export function ShipPreviewCanvas({ rarities, quality, label = 'Ship statistics 
     ring.material = material
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let interacting = false
-    const begin = () => { interacting = true }
+    const begin = (event: PointerEvent) => { if (event.button === 2 || event.pointerType === 'touch') interacting = true }
+    const preventContextMenu = (event: MouseEvent) => event.preventDefault()
     canvas.addEventListener('pointerdown', begin)
+    canvas.addEventListener('contextmenu', preventContextMenu)
     scene.onBeforeRenderObservable.add(() => {
+      showHullDamage(ship, hull.current)
       if (!interacting && !reduceMotion) ship.rotation.y += Math.min(engine.getDeltaTime() / 1000, 0.1) * 0.15
     })
     const resize = () => engine.resize()
@@ -56,6 +65,7 @@ export function ShipPreviewCanvas({ rarities, quality, label = 'Ship statistics 
       observer.disconnect()
       window.removeEventListener('resize', resize)
       canvas.removeEventListener('pointerdown', begin)
+      canvas.removeEventListener('contextmenu', preventContextMenu)
       camera.detachControl()
       scene.dispose()
       engine.dispose()

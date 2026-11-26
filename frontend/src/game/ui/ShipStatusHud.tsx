@@ -1,8 +1,9 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { DODGE_TIMING } from '../domain/combat'
 import './ShipStatusHud.css'
 
 export interface ShipStatusHudProps {
-  language: 'pl' | 'en'
+  language: GameLanguage
   shield: number
   maxShield: number
   hull: number
@@ -57,21 +58,20 @@ export function ShipStatusHud({
   dodgeRemaining,
   dodgeDuration = DODGE_TIMING.cooldown,
 }: ShipStatusHudProps) {
-  const polish = language === 'pl'
   const remaining = Math.max(0, dodgeRemaining ?? 0)
   const recharge = 1 - Math.min(1, remaining / Math.max(0.001, dodgeDuration))
 
   return (
-    <aside className="ship-status-hud" aria-label={polish ? 'Stan statku' : 'Ship status'}>
-      <StatusBar kind="shield" label={polish ? 'Osłony' : 'Shields'} current={shield} maximum={maxShield} />
-      <StatusBar kind="hull" label={polish ? 'Kadłub' : 'Hull'} current={hull} maximum={maxHull} />
+    <aside className="ship-status-hud" aria-label={gameText(language).shipStatus.shipStatus}>
+      <StatusBar kind="shield" label={gameText(language).shipStatus.shields} current={shield} maximum={maxShield} />
+      <StatusBar kind="hull" label={gameText(language).shipStatus.hull} current={hull} maximum={maxHull} />
       {dodgeRemaining !== undefined && (
         <StatusBar
           kind="dodge"
-          label={polish ? 'Unik' : 'Dodge'}
+          label={gameText(language).shipStatus.dodge}
           current={recharge * 100}
           maximum={100}
-          displayValue={remaining > 0 ? `${remaining.toFixed(1)} s` : polish ? 'Gotowy' : 'Ready'}
+          displayValue={remaining > 0 ? `${remaining.toFixed(1)} s` : gameText(language).shipStatus.ready}
           ready={remaining === 0}
         />
       )}

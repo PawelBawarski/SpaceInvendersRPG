@@ -1,3 +1,4 @@
+import { localizedText, type LocalizedText } from '../i18n'
 import { ORION_PLANETS, VEIL_PATROL_DRONE, type SectorPosition, type DroneSite, type FactionId } from '../domain/exploration'
 import { createWorldShip } from '../domain/worldFactions'
 import { BOSS_ESCORT_ORBIT, BOSS_VISUAL_SCALE } from '../domain/enemyScale'
@@ -11,8 +12,8 @@ export interface BossCombatProfile {
 }
 export interface MissionDefinition {
   id: MissionId
-  title: { pl: string; en: string }
-  briefing: { pl: string; en: string }
+  title: LocalizedText
+  briefing: LocalizedText
   objective: MissionObjective
   reward: { credits: number; meridianCore: number; fragments: number }
   sectorTarget?: MissionSectorTarget
@@ -31,14 +32,8 @@ export interface CampaignProgress {
 const MISSION_SITES: readonly MissionDefinition[] = [
   {
     "id": "warden",
-    "title": {
-      "pl": "Pierwszy kontakt",
-      "en": "First Contact"
-    },
-    "briefing": {
-      "pl": "Strażnik Meridian utrzymuje blokadę szlaku. Doleć do jego sygnału i przełam osłonę.",
-      "en": "Fly to the Warden signal and break its blockade."
-    },
+    "title": localizedText(text => text.missions.wardenTitle),
+    "briefing": localizedText(text => text.missions.wardenBriefing),
     "objective": "destroy-warden",
     "reward": {
       "credits": 240,
@@ -64,14 +59,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "silent-signal",
-    "title": {
-      "pl": "Sygnał w ciszy",
-      "en": "Signal in the Quiet"
-    },
-    "briefing": {
-      "pl": "Odzyskaj trzy czarne skrzynki z rozproszonego wraku.",
-      "en": "Recover three black boxes from the scattered wreck."
-    },
+    "title": localizedText(text => text.missions.silentSignalTitle),
+    "briefing": localizedText(text => text.missions.silentSignalBriefing),
     "objective": "recover-fragments",
     "reward": {
       "credits": 120,
@@ -88,14 +77,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "signal-source",
-    "title": {
-      "pl": "Echo w rdzeniu",
-      "en": "Echo in the Core"
-    },
-    "briefing": {
-      "pl": "Doleć do pulsującego przekaźnika. Strzelaj w przerwach między impulsami osłony.",
-      "en": "Fly to the pulsing relay and fire during the gaps in its shield."
-    },
+    "title": localizedText(text => text.missions.signalSourceTitle),
+    "briefing": localizedText(text => text.missions.signalSourceBriefing),
     "objective": "disable-signal",
     "reward": {
       "credits": 180,
@@ -121,14 +104,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "veil-survey",
-    "title": {
-      "pl": "Archiwum Mgławicy",
-      "en": "Veil Archive"
-    },
-    "briefing": {
-      "pl": "Zeskanuj ruiny na orbicie Archiwum Mgławicy.",
-      "en": "Survey the ruins at the Veil Archive."
-    },
+    "title": localizedText(text => text.missions.veilSurveyTitle),
+    "briefing": localizedText(text => text.missions.veilSurveyBriefing),
     "objective": "survey-planet",
     "reward": {
       "credits": 150,
@@ -149,14 +126,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "patrol-hunt",
-    "title": {
-      "pl": "Cichy patrol",
-      "en": "Silent Patrol"
-    },
-    "briefing": {
-      "pl": "Odszukaj i zniszcz zwiadowcę Veil.",
-      "en": "Find and destroy the Veil scout."
-    },
+    "title": localizedText(text => text.missions.patrolHuntTitle),
+    "briefing": localizedText(text => text.missions.patrolHuntBriefing),
     "objective": "destroy-patrol",
     "reward": {
       "credits": 225,
@@ -178,14 +149,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "null-choir",
-    "title": {
-      "pl": "Głos bez echa",
-      "en": "The Null Choir"
-    },
-    "briefing": {
-      "pl": "Przerwij transmisję Chóru i odeprzyj jego eskortę.",
-      "en": "Silence the Choir and fight through its escort."
-    },
+    "title": localizedText(text => text.missions.nullChoirTitle),
+    "briefing": localizedText(text => text.missions.nullChoirBriefing),
     "objective": "destroy-warden",
     "reward": {
       "credits": 320,
@@ -211,14 +176,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "glass-orbit",
-    "title": {
-      "pl": "Strażnicy szklanej orbity",
-      "en": "Glass Orbit Guardians"
-    },
-    "briefing": {
-      "pl": "Okrąż Szklany Księżyc i oczyść orbitę z sześciu okrętów korsarzy.",
-      "en": "Circle the Glass Moon and clear six corsair ships from orbit."
-    },
+    "title": localizedText(text => text.missions.glassOrbitTitle),
+    "briefing": localizedText(text => text.missions.glassOrbitBriefing),
     "objective": "orbital-sweep",
     "reward": {
       "credits": 280,
@@ -240,14 +199,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "nacre-ambush",
-    "title": {
-      "pl": "Zasadzka na rafie",
-      "en": "Reef Ambush"
-    },
-    "briefing": {
-      "pl": "Rozbij eskadrę blokującą szlak przy Rafie Nacre.",
-      "en": "Break the squadron blockading the Nacre Reef route."
-    },
+    "title": localizedText(text => text.missions.nacreAmbushTitle),
+    "briefing": localizedText(text => text.missions.nacreAmbushBriefing),
     "objective": "clear-squadron",
     "reward": {
       "credits": 360,
@@ -265,14 +218,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "ashen-carrier",
-    "title": {
-      "pl": "Nosiciel Popiołu",
-      "en": "Ashen Carrier"
-    },
-    "briefing": {
-      "pl": "Legion Popiołu sprowadził ciężkiego nosiciela i bombowce eskorty.",
-      "en": "The Ashen Legion has deployed a heavy carrier and bomber escort."
-    },
+    "title": localizedText(text => text.missions.ashenCarrierTitle),
+    "briefing": localizedText(text => text.missions.ashenCarrierBriefing),
     "objective": "destroy-warden",
     "reward": {
       "credits": 520,
@@ -298,14 +245,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "forge-orbit",
-    "title": {
-      "pl": "Oblężenie Kuźni",
-      "en": "Foundry Siege"
-    },
-    "briefing": {
-      "pl": "Leć po orbicie Cichej Kuźni i zniszcz osiem jednostek oblężniczych.",
-      "en": "Fly around the Quiet Foundry and destroy eight siege ships."
-    },
+    "title": localizedText(text => text.missions.forgeOrbitTitle),
+    "briefing": localizedText(text => text.missions.forgeOrbitBriefing),
     "objective": "orbital-sweep",
     "reward": {
       "credits": 420,
@@ -327,14 +268,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "cult-convergence",
-    "title": {
-      "pl": "Zgromadzenie kultu",
-      "en": "Cult Convergence"
-    },
-    "briefing": {
-      "pl": "Przerwij zgromadzenie kultystów nad Obsydianowym Przypływem.",
-      "en": "Disperse the cult gathering above Obsidian Tide."
-    },
+    "title": localizedText(text => text.missions.cultConvergenceTitle),
+    "briefing": localizedText(text => text.missions.cultConvergenceBriefing),
     "objective": "clear-squadron",
     "reward": {
       "credits": 400,
@@ -352,14 +287,8 @@ const MISSION_SITES: readonly MissionDefinition[] = [
   },
   {
     "id": "meridian-warlord",
-    "title": {
-      "pl": "Ostatni admirał",
-      "en": "The Last Admiral"
-    },
-    "briefing": {
-      "pl": "Odnajdź flagowy okręt rozłamu Meridian. Jego ciężkie salwy rozrywają tarcze.",
-      "en": "Find the Meridian secession flagship. Its heavy volleys tear through shields."
-    },
+    "title": localizedText(text => text.missions.meridianWarlordTitle),
+    "briefing": localizedText(text => text.missions.meridianWarlordBriefing),
     "objective": "destroy-warden",
     "reward": {
       "credits": 700,

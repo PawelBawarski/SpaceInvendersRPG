@@ -1,9 +1,14 @@
+import { formatControlKey, gameText, type GameLanguage } from '../i18n'
 import { FLIGHT_COMMANDS, type FlightCommand } from '../input/InputController'
 import type { GameSettings } from '../progress/gameSettings'
 import { GraphicsOptions } from './GraphicsOptions'
+import { LanguageSetting } from './LanguageSetting'
+import { MouseSensitivitySetting, VolumeSettings } from './SettingsSliders'
+import { IconButton } from './ActionIcon'
+import { FixedControls } from './FixedControls'
 
 interface GamePauseOverlayProps {
-  language: 'pl' | 'en'
+  language: GameLanguage
   mode: 'pause' | 'settings'
   settings: GameSettings
   controlLabels: Record<FlightCommand, string>
@@ -16,14 +21,6 @@ interface GamePauseOverlayProps {
   onExit: () => void
 }
 
-function keyLabel(code: string, language: 'pl' | 'en'): string {
-  if (code === 'Space') return language === 'pl' ? 'Spacja' : 'Space'
-  if (code === 'ShiftLeft' || code === 'ShiftRight') return 'Shift'
-  if (code === 'ControlLeft' || code === 'ControlRight') return 'Ctrl'
-  if (code.startsWith('Key')) return code.slice(3)
-  if (code.startsWith('Digit')) return code.slice(5)
-  return code
-}
 
 export function GamePauseOverlay({
   language,
@@ -38,10 +35,9 @@ export function GamePauseOverlay({
   onBack,
   onExit,
 }: GamePauseOverlayProps) {
-  const polish = language === 'pl'
   const title = mode === 'pause'
-    ? (polish ? 'PAUZA' : 'PAUSED')
-    : (polish ? 'USTAWIENIA LOTU' : 'FLIGHT SETTINGS')
+    ? (gameText(language).pause.paused)
+    : (gameText(language).pause.flightSettings)
   const backToPause = () => {
     onSetRebindingCommand(null)
     onBack()
@@ -51,46 +47,38 @@ export function GamePauseOverlay({
     <div className="game-pause-backdrop">
       {mode === 'pause' ? (
         <section className="game-pause-dialog" role="dialog" aria-modal="true" aria-labelledby="game-pause-title">
-          <p className="eyebrow">{polish ? 'NEON VOID / LOT' : 'NEON VOID / FLIGHT'}</p>
+          <p className="eyebrow">{gameText(language).pause.neonVoidFlight}</p>
           <h1 id="game-pause-title">{title}</h1>
           <div className="game-pause-actions">
             <button type="button" className="primary-action" onClick={onResume}>
-              {polish ? 'Wznów' : 'Resume'}
+              {gameText(language).pause.resume}
             </button>
             <button type="button" className="menu-action" onClick={onOpenSettings}>
-              {polish ? 'Ustawienia' : 'Settings'}
+              {gameText(language).pause.settings}
             </button>
             <button type="button" className="menu-action game-pause-exit" onClick={onExit}>
-              {polish ? 'Wyjdź' : 'Exit'}
+              {gameText(language).pause.exit}
             </button>
           </div>
-          <p className="game-pause-hint">{polish ? 'Naciśnij Esc, aby wrócić do lotu.' : 'Press Esc to return to flight.'}</p>
         </section>
       ) : (
         <section className="game-pause-dialog game-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="game-pause-title">
           <header className="game-settings-header">
             <div>
-              <p className="eyebrow">{polish ? 'NEON VOID / KONFIGURACJA' : 'NEON VOID / CONFIGURATION'}</p>
+              <p className="eyebrow">{gameText(language).pause.neonVoidConfiguration}</p>
               <h1 id="game-pause-title">{title}</h1>
             </div>
-            <button
-              type="button"
-              className="settings-close"
-              aria-label={polish ? 'Zamknij ustawienia lotu' : 'Close flight settings'}
-              title={polish ? 'Zamknij ustawienia lotu (Esc)' : 'Close flight settings (Esc)'}
-              onClick={backToPause}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            <IconButton icon="close" className="settings-close" label={gameText(language).pause.closeFlightSettings} onClick={backToPause} />
           </header>
           <div
             className="game-settings-controls"
             role="region"
-            aria-label={polish ? 'Opcje lotu' : 'Flight options'}
+            aria-label={gameText(language).pause.flightOptions}
             tabIndex={0}
           >
+            <LanguageSetting language={language} className="game-setting-row" onChange={selected => onUpdateSettings({ language: selected })} />
             <label className="game-setting-row" htmlFor="pause-graphics">
-              <span>{polish ? 'Jakość grafiki' : 'Graphics quality'}</span>
+              <span>{gameText(language).pause.graphicsQuality}</span>
               <select
                 id="pause-graphics"
                 value={settings.graphicsQuality}
@@ -101,69 +89,41 @@ export function GamePauseOverlay({
                   }
                 }}
               >
-                <option value="low">{polish ? 'Niska' : 'Low'}</option>
-                <option value="standard">{polish ? 'Standardowa' : 'Standard'}</option>
-                <option value="high">{polish ? 'Wysoka' : 'High'}</option>
+                <option value="low">{gameText(language).pause.low}</option>
+                <option value="standard">{gameText(language).pause.standard}</option>
+                <option value="high">{gameText(language).pause.high}</option>
               </select>
             </label>
             <GraphicsOptions settings={settings} onChange={onUpdateSettings} compact />
-            {([
-              ['mainVolume', polish ? 'Głośność główna' : 'Master volume'],
-              ['shotsVolume', polish ? 'Strzały' : 'Weapon sounds'],
-              ['musicVolume', polish ? 'Muzyka' : 'Music'],
-            ] as const).map(([field, label]) => (
-              <label className="game-setting-row" htmlFor={`pause-${field}`} key={field}>
-                <span>{label}</span>
-                <input
-                  id={`pause-${field}`}
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(settings[field] * 100)}
-                  onChange={(event) => onUpdateSettings({ [field]: Number(event.currentTarget.value) / 100 })}
-                />
-                <output htmlFor={`pause-${field}`}>{Math.round(settings[field] * 100)}%</output>
-              </label>
-            ))}
-            <label className="game-setting-row" htmlFor="pause-mouse-sensitivity">
-              <span>{polish ? 'Czułość myszy' : 'Mouse sensitivity'}</span>
-              <input
-                id="pause-mouse-sensitivity"
-                type="range"
-                min="0.5"
-                max="3"
-                step="0.1"
-                value={settings.mouseSensitivity}
-                onChange={(event) => onUpdateSettings({ mouseSensitivity: Number(event.currentTarget.value) })}
-              />
-              <output htmlFor="pause-mouse-sensitivity">{settings.mouseSensitivity.toFixed(1)}×</output>
-            </label>
+            <VolumeSettings settings={settings} onChange={onUpdateSettings} compact />
+            <MouseSensitivitySetting settings={settings} onChange={onUpdateSettings} compact />
             <div className="game-keybindings">
-              <strong>{polish ? 'Sterowanie' : 'Controls'}</strong>
+              <strong>{gameText(language).pause.controls}</strong>
+              <FixedControls language={language} />
               {FLIGHT_COMMANDS.map((command) => (
                 <div className="game-keybinding" key={command}>
                   <span>{controlLabels[command]}</span>
                   <button
                     type="button"
-                    aria-label={`${polish ? 'Zmień klawisz' : 'Rebind'}: ${controlLabels[command]}`}
+                    aria-label={`${gameText(language).pause.rebind}: ${controlLabels[command]}`}
                     onClick={() => onSetRebindingCommand(command)}
                   >
                     {rebindingCommand === command
-                      ? (polish ? 'Naciśnij klawisz…' : 'Press a key…')
-                      : keyLabel(settings.controls[command], language)}
+                      ? (gameText(language).pause.pressAKey)
+                      : formatControlKey(settings.controls[command], language)}
                   </button>
                 </div>
               ))}
               {rebindingCommand && (
                 <p className="game-rebinding-hint" role="status">
-                  {polish ? 'Naciśnij nowy klawisz. Esc anuluje zmianę.' : 'Press a new key. Esc cancels.'}
+                  {gameText(language).pause.pressANewKeyEscCancels}
                 </p>
               )}
             </div>
           </div>
           <footer className="game-settings-footer">
             <button type="button" className="primary-action game-settings-back" onClick={backToPause}>
-              {polish ? 'Wróć do pauzy' : 'Back to pause'}
+              {gameText(language).pause.backToPause}
             </button>
           </footer>
         </section>

@@ -116,7 +116,6 @@
   cursor: pointer;
 }
 .pilot-open-statistics:hover, .ship-sheet-tabs button:hover, .pilot-training-track button:enabled:hover { border-color: #8fd2e2; background: #1a3443; }
-.pilot-open-statistics kbd, .ship-sheet-tabs kbd { margin-left: 4px; color: #84d4df; }
 .pilot-inventory .pilot-ship-deck {
   display: grid;
   grid-template-columns: minmax(102px, 1fr) minmax(135px, 1.65fr) minmax(102px, 1fr);

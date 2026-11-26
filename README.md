@@ -60,6 +60,12 @@ Na Linuxie lub macOS: `cp .env.example .env`. Docker Compose oraz skrypty `npm r
 
 Kontener tworzy bazę `neon_void` i udostępnia ją na porcie `5432`. Zmiana danych dostępu w `.env` nie zmienia użytkownika w już istniejącym wolumenie PostgreSQL. Przykładowe dane są przeznaczone do lokalnego developmentu. Plik `.env` jest pomijany przez Git.
 
+## Języki gry
+
+Gracz wybiera język w Ustawieniach. Teksty interfejsu, misji i dialogów są w [pl.json](frontend/src/game/i18n/pl.json) oraz [en.json](frontend/src/game/i18n/en.json).
+
+Żeby dodać język, skopiuj katalog, przetłumacz wartości i ustaw nazwę języka w polu `common.languageName`. Zachowaj klucze, kolejność wpisów w listach i parametry takie jak `{hull}`. Dodaj import katalogu oraz kod języka w `catalogs` w [index.ts](frontend/src/game/i18n/index.ts). Test katalogów sprawdza zgodność kluczy i parametrów.
+
 ## Sprawdzenie projektu
 
 Z głównego katalogu:
@@ -108,11 +114,11 @@ Do repozytorium trafiają źródła, grafiki, testy, konfiguracja, pliki blokady
 - `K` — dodge.
 - `LPM` lub `F` — strzał.
 
-Mysz lub `A/D` i `W/S` obracają statek. `I` otwiera ekwipunek poza walką, `C` statystyki i podgląd 3D aktualnego statku, `L` dziennik nawigacyjny, a `Esc` pauzę. Dziennik zamyka się klawiszem L lub przyciskiem X; statystyki klawiszem C lub Esc. L jest zarezerwowane dla dziennika. Starsze przypisania sterowania migrują bez utraty pozostałych ustawień.
+Przeciąganie z przytrzymanym `PPM` obraca widok w locie. Do sterowania statkiem można też używać `A/D` i `W/S`. `I` otwiera ekwipunek poza walką, `C` statystyki i podgląd 3D statku, `L` dziennik nawigacyjny, a `Esc` pauzę. Pełna lista przypisań jest dostępna w Ustawieniach gry.
 
 ## Obecna rozgrywka
 
-Nowa gra zaczyna się bezpośrednio w galaktyce. Do celów misji trzeba samodzielnie dolecieć. Orion-7 zawiera 60 planet i 3000 statków patrolowych — ponad 13 razy więcej niż poprzednie 226. Granice świata wynoszą x ±560000, y ±350000 i z 0–3000000 m. Planety mają trzykrotnie większe promienie, od 1728 do 37800 m. Stacje zachowują swoje współrzędne; cele orbitalne i skany uwzględniają powierzchnie powiększonych planet.
+Nowa gra zaczyna się na Szklanym Księżycu od naprawy połączeń, zestrojenia reaktora i odtworzenia sekwencji zapłonu. Po starcie Vanta ma 30 HP oraz rozładowane osłony i kieruje się do hangaru na naprawę. Dalsze cele misji wymagają samodzielnego przelotu. W Orionie-7 jest 47 planet i ponad 3000 statków patrolowych.
 
 W przestrzeni rozmieszczono 12 misji, w tym pięciu bossów z eskortami i dwie walki na orbitach. Statki wrogów i bossowie są kolejne 3× więksi; skala modeli wynosi odpowiednio 9 i 18, a obszary trafień rosną razem z nimi. Podczas lotu widoczny jest tylko znacznik najbliższego hangaru, bez tła i ramki. Dziennik ma mapę sektora, aktualny kurs, listę trzech stacji i sygnałów misji. Przyciski kursu zmieniają znacznik, zachowując otwarty dziennik i pozycję statku. Wlot wymaga zbliżenia i braku przeciwników; hangar przygotowuje się podczas animowanego podejścia, przelotu przez śluzę i lądowania.
 
@@ -122,7 +128,7 @@ Plecak ma 36 miejsc oraz osobne sloty uzbrojenia, osłon i silnika. Grafiki modu
 
 Wyposażenie może zapewniać odporności kinetyczne, termiczne, jonowe i na promieniowanie. Sumują się tylko zamontowane moduły, z limitem 85% dla każdego typu; wartości pokazuje ekwipunek i warsztat. Obecny ostrzał zadaje obrażenia kinetyczne, a słońce termiczne. Typy jonowy i promieniowanie są przygotowane w API do kolejnych broni oraz zagrożeń.
 
-Smugi silników i pasma przyspieszenia reagują na moc napędu, a podczas bezwładnego lotu pasma znikają. Pociski gracza wyprzedzają statek. Kadłub i osłony są widoczne na paskach podczas lotu oraz walki; pasek uniku pokazuje jego odnowienie. Liczby obrażeń znikają po sekundzie.
+Smugi silników i pasma przyspieszenia reagują na moc napędu, a podczas bezwładnego lotu pasma znikają. Ogień z działek prowadzi się ręcznie według celownika. Obrys wskazuje wrogi statek na linii celowania. Pęknięcia i osmolenia na modelach narastają z utratą kadłuba. Zwykłe jednostki flankują i przy krytycznym stanie kadłuba próbują się wycofać. Bossowie zmieniają taktykę i nasilają atak w końcowej fazie starcia.
 
 ## Renderowanie dużego świata
 

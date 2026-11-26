@@ -1,3 +1,4 @@
+import { localizedText, type LocalizedText } from '../i18n'
 export const DAMAGE_TYPES = ['kinetic', 'thermal', 'ion', 'radiation'] as const
 export type DamageType = (typeof DAMAGE_TYPES)[number]
 /** Fractions: 0.2 absorbs twenty percent. No type can become fully immune. */
@@ -11,11 +12,11 @@ export const DEFAULT_SHIP_RESISTANCES: ResistanceProfile = {
   radiation: 0,
 }
 
-export const DAMAGE_TYPE_LABELS: Readonly<Record<DamageType, { pl: string; en: string }>> = {
-  kinetic: { pl: 'Kinetyczne', en: 'Kinetic' },
-  thermal: { pl: 'Termiczne', en: 'Thermal' },
-  ion: { pl: 'Jonowe', en: 'Ion' },
-  radiation: { pl: 'Promieniowanie', en: 'Radiation' },
+export const DAMAGE_TYPE_LABELS: Readonly<Record<DamageType, LocalizedText>> = {
+  kinetic: localizedText(text => text.damageTypes.kinetic),
+  thermal: localizedText(text => text.damageTypes.thermal),
+  ion: localizedText(text => text.damageTypes.ion),
+  radiation: localizedText(text => text.damageTypes.radiation),
 }
 
 export function getDamageResistance(type: DamageType, profile: ResistanceProfile = {}): number {

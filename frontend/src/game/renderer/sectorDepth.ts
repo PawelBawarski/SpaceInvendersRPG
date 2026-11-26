@@ -1,4 +1,4 @@
-import { StandardMaterial, type Scene } from '@babylonjs/core'
+import { StandardMaterial, type Scene } from './babylon'
 
 const logarithmicScenes = new WeakSet<Scene>()
 

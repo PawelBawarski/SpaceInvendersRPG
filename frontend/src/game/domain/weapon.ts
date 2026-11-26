@@ -7,6 +7,8 @@ export const PLAYER_WEAPON = {
   fireCooldown: 0.16,
   projectileSpeed: 1000,
   projectilesPerVolley: 2,
+  projectileLifetime: 2.8,
+  sightConvergence: 180,
 } as const
 
 const DAMAGE_RANGES: Record<ShipPartRarity, readonly [number, number]> = {

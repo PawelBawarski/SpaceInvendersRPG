@@ -17,6 +17,8 @@ export const FLIGHT_COMMANDS = [
 export type FlightCommand = (typeof FLIGHT_COMMANDS)[number]
 export type ControlBindings = Record<FlightCommand, string>
 export const DEFAULT_MOUSE_SENSITIVITY = 1.5
+export const MOUSE_SENSITIVITY_RANGE = { min: 0.5, max: 3, step: 0.1 } as const
+const LOOK_RADIANS_PER_PIXEL = 0.0018
 
 export interface MouseFlightInput {
   yaw: number
@@ -49,7 +51,9 @@ export class InputController {
   private readonly keys = new Set<string>()
   private readonly taps = new Set<string>()
   private bindings: ControlBindings
-  private mouseAim = { yaw: 0, pitch: 0 }
+  private readonly mouseAim = { yaw: 0, pitch: 0 }
+  private lookPosition: { x: number; y: number } | undefined
+  private flightPointer: number | undefined
   private mouseFire = false
   private mouseSensitivity: number
   private suspended = false
@@ -66,46 +70,59 @@ export class InputController {
   private readonly keyUp = (event: KeyboardEvent) => {
     this.keys.delete(event.code)
   }
+  private updatePointerButtons(event: PointerEvent) {
+    this.mouseFire = (event.buttons & 1) !== 0
+    if (event.buttons & 2) this.lookPosition ??= { x: event.clientX, y: event.clientY }
+    else this.lookPosition = undefined
+  }
   private readonly pointerMove = (event: PointerEvent) => {
-    if (!this.canvas || this.suspended) return
-    const bounds = this.canvas.getBoundingClientRect()
-    if (bounds.width === 0 || bounds.height === 0) return
-
-    this.mouseAim = {
-      yaw: ((event.clientX - bounds.left) / bounds.width - 0.5) * 2,
-      pitch: ((event.clientY - bounds.top) / bounds.height - 0.5) * 1.6,
-    }
+    if (event.pointerId !== this.flightPointer || this.suspended) return
+    const position = this.lookPosition
+    this.updatePointerButtons(event)
+    if (!position || !this.lookPosition) return
+    this.mouseAim.yaw += event.clientX - position.x
+    this.mouseAim.pitch += event.clientY - position.y
+    position.x = event.clientX
+    position.y = event.clientY
   }
   private readonly pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || this.suspended) return
-    this.mouseFire = true
+    if (this.suspended || (event.button !== 0 && event.button !== 2)) return
+    if (event.button === 0 && event.target !== this.canvas) return
+    this.flightPointer = event.pointerId
+    this.updatePointerButtons(event)
     event.preventDefault()
   }
-  private readonly pointerLeave = () => {
-    this.mouseAim = { yaw: 0, pitch: 0 }
+  private readonly pointerEnd = (event: PointerEvent) => {
+    if (event.pointerId !== this.flightPointer) return
+    this.flightPointer = undefined
+    this.mouseFire = false
+    this.lookPosition = undefined
   }
-  private readonly pointerUp = (event: PointerEvent) => {
-    if (event.button === 0) this.mouseFire = false
+  private readonly preventContextMenu = (event: MouseEvent) => {
+    const surface = this.pointerSurface
+    if (surface && (!this.suspended || (event.target instanceof Node && surface.contains(event.target)))) event.preventDefault()
   }
-  private readonly preventContextMenu = (event: MouseEvent) => event.preventDefault()
   private readonly clearInput = () => {
     this.keys.clear()
     this.taps.clear()
     this.mouseFire = false
-    this.mouseAim = { yaw: 0, pitch: 0 }
+    this.flightPointer = undefined
+    this.lookPosition = undefined
+    this.mouseAim.yaw = 0
+    this.mouseAim.pitch = 0
   }
   private readonly canvas: HTMLCanvasElement | undefined
+  private readonly pointerSurface: HTMLElement | undefined
 
   dispose(): void {
     window.removeEventListener('keydown', this.keyDown)
     window.removeEventListener('keyup', this.keyUp)
-    window.removeEventListener('pointerup', this.pointerUp)
-    window.removeEventListener('pointercancel', this.pointerUp)
+    window.removeEventListener('pointerup', this.pointerEnd, true)
+    window.removeEventListener('pointermove', this.pointerMove, true)
+    window.removeEventListener('pointercancel', this.pointerEnd, true)
     window.removeEventListener('blur', this.clearInput)
-    this.canvas?.removeEventListener('pointermove', this.pointerMove)
-    this.canvas?.removeEventListener('pointerdown', this.pointerDown)
-    this.canvas?.removeEventListener('pointerleave', this.pointerLeave)
-    this.canvas?.removeEventListener('contextmenu', this.preventContextMenu)
+    this.pointerSurface?.removeEventListener('pointerdown', this.pointerDown, true)
+    window.removeEventListener('contextmenu', this.preventContextMenu, true)
   }
 
   constructor(
@@ -115,16 +132,16 @@ export class InputController {
   ) {
     this.bindings = bindings
     this.canvas = canvas
+    this.pointerSurface = canvas?.parentElement ?? canvas
     this.mouseSensitivity = mouseSensitivity
     window.addEventListener('keydown', this.keyDown)
     window.addEventListener('keyup', this.keyUp)
-    window.addEventListener('pointerup', this.pointerUp)
-    window.addEventListener('pointercancel', this.pointerUp)
+    window.addEventListener('pointerup', this.pointerEnd, true)
+    window.addEventListener('pointermove', this.pointerMove, true)
+    window.addEventListener('pointercancel', this.pointerEnd, true)
     window.addEventListener('blur', this.clearInput)
-    canvas?.addEventListener('pointermove', this.pointerMove)
-    canvas?.addEventListener('pointerdown', this.pointerDown)
-    canvas?.addEventListener('pointerleave', this.pointerLeave)
-    canvas?.addEventListener('contextmenu', this.preventContextMenu)
+    this.pointerSurface?.addEventListener('pointerdown', this.pointerDown, true)
+    if (canvas) window.addEventListener('contextmenu', this.preventContextMenu, true)
   }
 
   isDown(command: FlightCommand): boolean {
@@ -150,14 +167,14 @@ export class InputController {
 
   readMouseFlight(): MouseFlightInput {
     if (this.suspended) return { yaw: 0, pitch: 0, fire: false }
-    return {
-      yaw: clamp(this.mouseAim.yaw * this.mouseSensitivity, -1, 1),
-      pitch: clamp(this.mouseAim.pitch * this.mouseSensitivity, -1, 1),
+    const sensitivity = LOOK_RADIANS_PER_PIXEL * this.mouseSensitivity
+    const update = {
+      yaw: this.mouseAim.yaw * sensitivity,
+      pitch: this.mouseAim.pitch * sensitivity,
       fire: this.mouseFire,
     }
+    this.mouseAim.yaw = 0
+    this.mouseAim.pitch = 0
+    return update
   }
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.max(minimum, Math.min(maximum, value))
 }

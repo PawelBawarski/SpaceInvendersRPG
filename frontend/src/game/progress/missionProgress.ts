@@ -13,14 +13,20 @@ import {
 import { getGalaxy, ORION_SECTOR_ID, type GalaxyId } from '../domain/galaxyChart'
 import { getMission, isMissionComplete, MISSIONS, type MissionId } from '../missions/definitions'
 import { DAMAGE_TYPES, DEFAULT_SHIP_RESISTANCES, getDamageResistance, MAX_DAMAGE_RESISTANCE, type DamageType, type ResistanceProfile } from '../domain/damageTypes'
-import type { ShipVitals } from '../domain/shipTelemetry'
+import { FIRST_FLIGHT_VITALS, type ShipVitals } from '../domain/shipTelemetry'
+import { RECOVERY_COMPLETE_MASK } from '../simulation/ShipRecovery'
 import { canLearnPilotSkill, PILOT_SKILLS, readPilotSkills, type PilotSkillId } from './pilotSkills'
+
+export const ORION_LAYOUT_VERSION = 2
 
 export interface MissionProgress {
   worldSeed: number
+  orionLayoutVersion: number
   prologueComplete: boolean
+  initialRepairRequired: boolean
   repairMask: number
   orbitPlanetId: string | null
+  recoveryStationId: string | null
   droneRespawns: Record<string, number>
   shipVitals: ShipVitals | null
   completedMissions: MissionId[]
@@ -84,7 +90,8 @@ const STORAGE_KEY = 'neon-void:mission-progress:v1'
 
 export function createEmptyMissionProgress(): MissionProgress {
   return {
-    worldSeed: 0, prologueComplete: true, repairMask: 0, orbitPlanetId: null, droneRespawns: {},
+    worldSeed: 0, orionLayoutVersion: ORION_LAYOUT_VERSION, prologueComplete: true, initialRepairRequired: false,
+    repairMask: 0, orbitPlanetId: null, recoveryStationId: null, droneRespawns: {},
     shipVitals: null,
     completedMissions: [],
     missionObjectiveProgress: {},
@@ -143,16 +150,22 @@ export function loadMissionProgress(): MissionProgress {
         : null
     }
 
+    const prologueComplete = parsed.prologueComplete !== false
+    const initialRepairRequired = !prologueComplete || parsed.initialRepairRequired === true
+    const savedVitals = parsed.shipVitals && typeof parsed.shipVitals === 'object'
+      && typeof parsed.shipVitals.hull === 'number' && Number.isFinite(parsed.shipVitals.hull)
+      && typeof parsed.shipVitals.shield === 'number' && Number.isFinite(parsed.shipVitals.shield)
+      ? { hull: Math.max(0, parsed.shipVitals.hull), shield: Math.max(0, parsed.shipVitals.shield) } : null
     return {
       worldSeed: nonNegativeNumber(parsed.worldSeed) >>> 0,
-      prologueComplete: parsed.prologueComplete !== false,
-      repairMask: Math.floor(nonNegativeNumber(parsed.repairMask)) & 7,
+      orionLayoutVersion: nonNegativeNumber(parsed.orionLayoutVersion),
+      prologueComplete,
+      initialRepairRequired,
+      repairMask: Math.floor(nonNegativeNumber(parsed.repairMask)) & RECOVERY_COMPLETE_MASK,
       orbitPlanetId: typeof parsed.orbitPlanetId === 'string' ? parsed.orbitPlanetId : null,
+      recoveryStationId: prologueComplete && typeof parsed.recoveryStationId === 'string' ? parsed.recoveryStationId : null,
       droneRespawns: parsed.droneRespawns && typeof parsed.droneRespawns === 'object' ? Object.fromEntries(Object.entries(parsed.droneRespawns).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0)) : {},
-      shipVitals: parsed.shipVitals && typeof parsed.shipVitals === 'object'
-        && typeof parsed.shipVitals.hull === 'number' && Number.isFinite(parsed.shipVitals.hull)
-        && typeof parsed.shipVitals.shield === 'number' && Number.isFinite(parsed.shipVitals.shield)
-        ? { hull: Math.max(0, parsed.shipVitals.hull), shield: Math.max(0, parsed.shipVitals.shield) } : null,
+      shipVitals: !prologueComplete || (initialRepairRequired && !savedVitals) ? { ...FIRST_FLIGHT_VITALS } : savedVitals,
       completedMissions: MISSIONS.filter(mission => Array.isArray(parsed.completedMissions) && parsed.completedMissions.includes(mission.id)).map(mission => mission.id),
       missionObjectiveProgress: Object.fromEntries(MISSIONS.map(mission => [mission.id, Math.floor(nonNegativeNumber(parsed.missionObjectiveProgress?.[mission.id]))]).filter(([, count]) => Number(count) > 0)),
       wardenDefeats: typeof parsed.wardenDefeats === 'number' ? parsed.wardenDefeats : 0,
@@ -429,13 +442,15 @@ export function updateSectorPosition(
   x = progress.sectorX,
   y = progress.sectorY,
 ): MissionProgress {
-  return {
-    ...progress,
+  const position = {
     sectorId: getGalaxy(sectorId).id,
     sectorX: finiteNumber(x),
     sectorY: finiteNumber(y),
     sectorDistance: nonNegativeNumber(distance),
   }
+  if (position.sectorId === progress.sectorId && position.sectorX === progress.sectorX
+    && position.sectorY === progress.sectorY && position.sectorDistance === progress.sectorDistance) return progress
+  return { ...progress, ...position }
 }
 
 export function craftRandomShipPart(

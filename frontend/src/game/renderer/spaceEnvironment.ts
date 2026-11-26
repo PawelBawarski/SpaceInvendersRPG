@@ -1,7 +1,7 @@
 import {
   Color3, DirectionalLight, DynamicTexture, FresnelParameters, GlowLayer, ImageProcessingConfiguration,
   Mesh, MeshBuilder, Scene, StandardMaterial, Vector3,
-} from '@babylonjs/core'
+} from './babylon'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import type { PlanetSite } from '../domain/exploration'
 import { createSceneMaterial } from './sectorDepth'
@@ -29,15 +29,15 @@ function addSphereLods(mesh: Mesh, diameter: number, planetRadius: number, quali
   }
 }
 
-export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, options: { decorativePlanet?: boolean; skyDiameter?: number; skyTint?: Color3 } = {}): void {
+export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, options: { decorativePlanet?: boolean; skyDiameter?: number; skyTint?: Color3 } = {}) {
   const size = quality === 'low' ? 1024 : 2048
   const texture = new DynamicTexture('meridianNebulaSky', { width: size, height: size / 2 }, scene, false)
   const context = texture.getContext()
   const random = randomSequence(7319)
   const base = context.createLinearGradient(0, 0, size, size / 2)
-  base.addColorStop(0, '#020712')
-  base.addColorStop(0.55, '#040b18')
-  base.addColorStop(1, '#020711')
+  base.addColorStop(0, '#010207')
+  base.addColorStop(0.55, '#02040a')
+  base.addColorStop(1, '#010106')
   context.fillStyle = base
   context.fillRect(0, 0, size, size / 2)
   const nebula = options.skyTint ?? Color3.FromHexString('#7daecf')
@@ -47,7 +47,7 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
     const y = size * (0.13 + Math.sin(x / size * 6) * 0.08 + random() * 0.15)
     const radius = size * (0.035 + random() * 0.095)
     const cloud = context.createRadialGradient(x, y, 0, x, y, radius)
-    cloud.addColorStop(0, index % 3 === 0 ? 'rgba(69,45,106,.065)' : `rgba(${tint},.088)`)
+    cloud.addColorStop(0, index % 3 === 0 ? 'rgba(69,45,106,.018)' : `rgba(${tint},.027)`)
     cloud.addColorStop(1, 'rgba(0,0,0,0)')
     context.fillStyle = cloud
     context.fillRect(x - radius, y - radius, radius * 2, radius * 2)
@@ -56,7 +56,7 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
     const x = random() * size
     const y = random() * size / 2
     const radius = random() > 0.98 ? 1 : 0.25 + random() * 0.4
-    context.globalAlpha = 0.15 + random() * 0.45
+    context.globalAlpha = .12 + random() * .34
     context.fillStyle = index % 9 === 0 ? '#efc59e' : index % 5 === 0 ? '#82b9e4' : '#e2efff'
     context.beginPath()
     context.arc(x, y, radius, 0, Math.PI * 2)
@@ -104,14 +104,16 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
 
   const key = new DirectionalLight('meridianStarlight', new Vector3(-0.6, -0.45, 0.75), scene)
   key.diffuse = new Color3(0.7, 0.83, 1)
-  key.intensity = 1
-  const rim = new DirectionalLight('meridianWarmRim', new Vector3(0.6, 0.25, -1), scene)
-  rim.diffuse = new Color3(1, 0.6, 0.35)
-  rim.intensity = 0.22
+  key.intensity = .84
+  key.renderPriority = 2
+  const rim = new DirectionalLight('meridianColdRim', new Vector3(0.6, 0.25, -1), scene)
+  rim.diffuse = new Color3(.41, .63, 1)
+  rim.intensity = .14
   scene.imageProcessingConfiguration.toneMappingEnabled = true
   scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
-  scene.imageProcessingConfiguration.exposure = 0.9
-  scene.imageProcessingConfiguration.contrast = 1.18
+  scene.imageProcessingConfiguration.exposure = .84
+  scene.imageProcessingConfiguration.contrast = 1.21
+  return key
 }
 
 export function createPlanetVisual(

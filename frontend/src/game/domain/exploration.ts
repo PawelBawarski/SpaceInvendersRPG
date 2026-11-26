@@ -1,3 +1,4 @@
+import { formatText, localizedText, type LocalizedText } from '../i18n'
 import { resolveWeaponHit } from './weapon'
 import { createWorldShip, type FactionId, type ShipArchetype } from './worldFactions'
 import type { MissionId } from '../missions/definitions'
@@ -19,8 +20,8 @@ export interface PlanetSite extends SectorPosition {
   orbitalFaction?: FactionId
   hasHangar?: boolean
   id: string
-  name: { pl: string; en: string }
-  description: { pl: string; en: string }
+  name: LocalizedText
+  description: LocalizedText
   color: string
   radius: number
 }
@@ -42,7 +43,7 @@ export interface DroneSite extends SectorPosition {
 export interface StationSite extends SectorPosition {
   planetId?: string
   id: string
-  name: { pl: string; en: string }
+  name: LocalizedText
   radius: number
   dockingRange: number
   launchPosition: SectorPosition
@@ -52,14 +53,14 @@ export interface StationSite extends SectorPosition {
 
 export interface SunSite extends SectorPosition {
   id: string
-  name: { pl: string; en: string }
+  name: LocalizedText
   radius: number
   /** Distance from the photosphere at which thermal exposure begins. */
   heatRange: number
 }
 
 export interface MerchantSite extends SectorPosition {
-  name: { pl: string; en: string }
+  name: LocalizedText
   radius: number
   tradeRange: number
 }
@@ -84,7 +85,7 @@ export const ORION_SECTOR_BOUNDS: Readonly<GalaxyBounds> = {
 }
 
 const ORIGINAL_ORION_SUN: Readonly<SunSite> = {
-  id: 'meridian-sun', name: { pl: 'Słońce Meridian', en: 'Meridian Sun' },
+  id: 'meridian-sun', name: localizedText(text => text.world.meridianSun),
   x: 337920, y: 90112, z: 4280320, radius: 288000, heatRange: 20000,
 }
 
@@ -98,17 +99,17 @@ export const ORION_START_POSITION: Readonly<SectorPosition> = { x: 0, y: 0, z: 0
 
 export const ORION_STATIONS: readonly StationSite[] = [
   {
-    id: 'meridian-haven', name: { pl: 'Przystań Meridian', en: 'Meridian Haven' },
+    id: 'meridian-haven', name: localizedText(text => text.world.meridianHaven),
     x: 0, y: 0, z: 1800, radius: 180, dockingRange: 440,
     launchPosition: { x: 0, y: 0, z: 1480 }, faction: 'meridian', color: '#78cfff',
   },
   {
-    id: 'nacre-crossing', name: { pl: 'Węzeł Nacre', en: 'Nacre Crossing' },
+    id: 'nacre-crossing', name: localizedText(text => text.world.nacreCrossing),
     x: -3600, y: 800, z: 23500, radius: 240, dockingRange: 520,
     launchPosition: { x: -3600, y: 800, z: 23120 }, faction: 'nacre', color: '#73edd3',
   },
   {
-    id: 'foundry-bastion', name: { pl: 'Bastion Kuźni', en: 'Foundry Bastion' },
+    id: 'foundry-bastion', name: localizedText(text => text.world.foundryBastion),
     x: 4200, y: 1400, z: 42000, radius: 300, dockingRange: 600,
     launchPosition: { x: 4200, y: 1400, z: 41560 }, faction: 'meridian', color: '#ffbd7b',
   },
@@ -117,11 +118,8 @@ export const ORION_STATIONS: readonly StationSite[] = [
 const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   {
     id: 'glass-moon',
-    name: { pl: 'Szklany Księżyc', en: 'Glass Moon' },
-    description: {
-      pl: 'Pęknięta skorupa odbija ślady dawnego szlaku. Skaner wykrywa metal i miedź.',
-      en: 'Its fractured crust reflects an old transit route. Scanners detect alloy and copper.',
-    },
+    name: localizedText(text => text.world.glassMoon),
+    description: localizedText(text => text.world.glassMoonDescription),
     color: '#65a9c8',
     radius: 16,
     x: 0,
@@ -130,11 +128,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'ember-world',
-    name: { pl: 'Popielny Świat', en: 'Ember World' },
-    description: {
-      pl: 'Radioaktywne burze przesuwają się nad nocną stroną. Wartość: rzadkie pozostałości.',
-      en: 'Radioactive storms roll over its dark side. Valuable residue readings.',
-    },
+    name: localizedText(text => text.world.emberWorld),
+    description: localizedText(text => text.world.emberWorldDescription),
     color: '#c77951',
     radius: 24,
     x: 384,
@@ -143,11 +138,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'meridian-wreck',
-    name: { pl: 'Wrak Meridian', en: 'Meridian Wreck' },
-    description: {
-      pl: 'Kadłub dawnej jednostki patrolowej. Sygnał ratunkowy urywa się w połowie nazwiska.',
-      en: 'A former patrol craft. Its distress call cuts off halfway through a name.',
-    },
+    name: localizedText(text => text.world.meridianWreck),
+    description: localizedText(text => text.world.meridianWreckDescription),
     color: '#8a83c9',
     radius: 16,
     x: -480,
@@ -156,11 +148,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'veil-archive',
-    name: { pl: 'Archiwum Mgławicy', en: 'Veil Archive' },
-    description: {
-      pl: 'Ruiny stacji tkwią w lodowej skorupie. Sygnał w środku nie pochodzi z żadnego znanego nadajnika.',
-      en: 'Station ruins are trapped in an icy crust. The signal inside matches no known transmitter.',
-    },
+    name: localizedText(text => text.world.veilArchive),
+    description: localizedText(text => text.world.veilArchiveDescription),
     color: '#82c6c1',
     radius: 20,
     x: 648,
@@ -169,11 +158,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'hollow-comet',
-    name: { pl: 'Pusta Kometa', en: 'Hollow Comet' },
-    description: {
-      pl: 'Kometa skrywa w lodowym jądrze ślady starych przelotów. Czujniki wychwytują metal i radioaktywny pył.',
-      en: 'The comet hides traces of old passages in its icy core. Sensors detect alloy and radioactive dust.',
-    },
+    name: localizedText(text => text.world.hollowComet),
+    description: localizedText(text => text.world.hollowCometDescription),
     color: '#78bed9',
     radius: 22,
     x: -696,
@@ -182,11 +168,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'quiet-foundry',
-    name: { pl: 'Cicha Kuźnia', en: 'Quiet Foundry' },
-    description: {
-      pl: 'Opuszczona stocznia wciąż emituje ciepło. Ktoś wygasił ją niedawno, nie dekady temu.',
-      en: 'The abandoned shipyard still radiates heat. It was shut down recently, not decades ago.',
-    },
+    name: localizedText(text => text.world.quietFoundry),
+    description: localizedText(text => text.world.quietFoundryDescription),
     color: '#bd8d66',
     radius: 28,
     x: 120,
@@ -195,11 +178,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'nacre-reef',
-    name: { pl: 'Rafa Nacre', en: 'Nacre Reef' },
-    description: {
-      pl: 'Skupisko kryształów odbija sygnały kurierów. Załoga może tu znaleźć miedź i rzadkie pozostałości.',
-      en: 'A field of crystals reflects courier signals. The crew may recover copper and rare residue here.',
-    },
+    name: localizedText(text => text.world.nacreReef),
+    description: localizedText(text => text.world.nacreReefDescription),
     color: '#8b79c9',
     radius: 18,
     x: -192,
@@ -208,11 +188,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'ashen-crown',
-    name: { pl: 'Korona Popiołu', en: 'Ashen Crown' },
-    description: {
-      pl: 'Na tle rdzawej atmosfery widać szczątki orbitalnego doku. Jego sygnał nawigacyjny nadal wyznacza dawny szlak.',
-      en: 'The remains of an orbital dock hang against a rust-colored atmosphere. Its navigation beacon still marks the old route.',
-    },
+    name: localizedText(text => text.world.ashenCrown),
+    description: localizedText(text => text.world.ashenCrownDescription),
     color: '#b67c59',
     radius: 30,
     x: 680,
@@ -221,11 +198,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'pale-sanctum',
-    name: { pl: 'Blada Przystań', en: 'Pale Haven' },
-    description: {
-      pl: 'Jasne równiny pokrywają opuszczone kopuły kolonii. Pod lodem skaner rozpoznaje regularne pasy dawnych lądowisk.',
-      en: 'Pale plains cover an abandoned colony’s domes. Beneath the ice, the scanner detects regular strips of old landing fields.',
-    },
+    name: localizedText(text => text.world.paleSanctum),
+    description: localizedText(text => text.world.paleSanctumDescription),
     color: '#b9c8bd',
     radius: 20,
     x: -340,
@@ -234,11 +208,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'obsidian-tide',
-    name: { pl: 'Obsydianowy Przypływ', en: 'Obsidian Tide' },
-    description: {
-      pl: 'Ciemny ocean otacza zastygłe wyspy. Na nocnej stronie odbijają się krótkie impulsy z nieczynnej sieci Meridian.',
-      en: 'A dark ocean surrounds frozen islands. Brief pulses from the dormant Meridian network reflect across the night side.',
-    },
+    name: localizedText(text => text.world.obsidianTide),
+    description: localizedText(text => text.world.obsidianTideDescription),
     color: '#6e689a',
     radius: 32,
     x: 110,
@@ -247,11 +218,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'cinder-vault',
-    name: { pl: 'Skarbiec Żaru', en: 'Cinder Vault' },
-    description: {
-      pl: 'Warstwy pyłu zasłaniają dawne kopalnie. Wśród kraterów zachowały się metalowe śluzy pozbawione oznaczeń.',
-      en: 'Layers of dust conceal old mines. Unmarked metal airlocks remain among the craters.',
-    },
+    name: localizedText(text => text.world.cinderVault),
+    description: localizedText(text => text.world.cinderVaultDescription),
     color: '#bb654e',
     radius: 27,
     x: -730,
@@ -260,11 +228,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'sable-garden',
-    name: { pl: 'Ogród Cienia', en: 'Shadow Garden' },
-    description: {
-      pl: 'Zielonkawe pasma chmur otaczają pasmo stacji badawczych. Ich rejestry urywają się w dniu, w którym zamilkły szlaki.',
-      en: 'Green cloud bands surround a chain of research stations. Their records end on the day the routes fell silent.',
-    },
+    name: localizedText(text => text.world.sableGarden),
+    description: localizedText(text => text.world.sableGardenDescription),
     color: '#588f7c',
     radius: 24,
     x: 730,
@@ -273,11 +238,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'frost-threshold',
-    name: { pl: 'Mroźny Próg', en: 'Frost Threshold' },
-    description: {
-      pl: 'Pęknięcia lodowej skorupy układają się wokół starego przekaźnika. Zasypany port oznaczono jeszcze kodem pierwszej ekspedycji.',
-      en: 'Cracks in the icy crust circle an old relay. The buried port still bears the first expedition’s code.',
-    },
+    name: localizedText(text => text.world.frostThreshold),
+    description: localizedText(text => text.world.frostThresholdDescription),
     color: '#84b4cf',
     radius: 26,
     x: 310,
@@ -286,11 +248,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'rusted-orbit',
-    name: { pl: 'Rdzawa Orbita', en: 'Rusted Orbit' },
-    description: {
-      pl: 'Pył z wyschniętych mórz barwi powierzchnię na pomarańczowo. Nad dawnym równikiem krążą kadłuby statków towarowych.',
-      en: 'Dust from dry seas stains the surface orange. Freighter hulls drift above the former equator.',
-    },
+    name: localizedText(text => text.world.rustedOrbit),
+    description: localizedText(text => text.world.rustedOrbitDescription),
     color: '#b78c59',
     radius: 19,
     x: -210,
@@ -299,11 +258,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'lumen-basin',
-    name: { pl: 'Kotlina Lumen', en: 'Lumen Basin' },
-    description: {
-      pl: 'Turkusowe wiry przesuwają się nad głęboką atmosferą. Sygnały boi pochodzą z konwoju, którego nie ma w żadnym dzienniku.',
-      en: 'Turquoise vortices move through a deep atmosphere. Its buoys transmit the signature of a convoy absent from every log.',
-    },
+    name: localizedText(text => text.world.lumenBasin),
+    description: localizedText(text => text.world.lumenBasinDescription),
     color: '#5caaa8',
     radius: 35,
     x: 640,
@@ -312,11 +268,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'dusk-citadel',
-    name: { pl: 'Cytadela Zmierzchu', en: 'Dusk Citadel' },
-    description: {
-      pl: 'Na granicy światła i cienia wyrastają pozostałości fortyfikacji. Ostatnia stacja obronna powtarza pusty raport o gotowości.',
-      en: 'Fortification remains rise along the terminator. The last defense station repeats an empty readiness report.',
-    },
+    name: localizedText(text => text.world.duskCitadel),
+    description: localizedText(text => text.world.duskCitadelDescription),
     color: '#777fae',
     radius: 31,
     x: -820,
@@ -325,11 +278,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'silent-marsh',
-    name: { pl: 'Milczące Rozlewisko', en: 'Silent Marsh' },
-    description: {
-      pl: 'Ciemne niziny przecina sieć porzuconych kanałów. Czujniki odnajdują równe rzędy fundamentów pod grubą warstwą osadu.',
-      en: 'A network of abandoned canals crosses dark lowlands. Sensors find even rows of foundations beneath thick sediment.',
-    },
+    name: localizedText(text => text.world.silentMarsh),
+    description: localizedText(text => text.world.silentMarshDescription),
     color: '#718f70',
     radius: 23,
     x: -395,
@@ -338,11 +288,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'black-lantern',
-    name: { pl: 'Czarna Latarnia', en: 'Black Lantern' },
-    description: {
-      pl: 'Samotna wieża na powierzchni była punktem odniesienia dla kurierów. Jej identyfikator nadal pojawia się w uszkodzonych mapach.',
-      en: 'A lone surface tower once guided courier ships. Its identifier still appears in corrupted charts.',
-    },
+    name: localizedText(text => text.world.blackLantern),
+    description: localizedText(text => text.world.blackLanternDescription),
     color: '#777b8d',
     radius: 29,
     x: 385,
@@ -351,11 +298,8 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
   },
   {
     id: 'meridian-reach',
-    name: { pl: 'Kres Meridian', en: 'Meridian Reach' },
-    description: {
-      pl: 'Za błękitnymi pasmami ostatniej dużej planety szlak znika z mapy. W odczycie pozostał tylko znak Czarnego Meridianu.',
-      en: 'Beyond the blue bands of the final major planet, the route vanishes from the chart. Only the Black Meridian mark remains.',
-    },
+    name: localizedText(text => text.world.meridianReach),
+    description: localizedText(text => text.world.meridianReachDescription),
     color: '#658aaa',
     radius: 38,
     x: 60,
@@ -365,60 +309,54 @@ const PREVIOUS_ORION_PLANETS: readonly PlanetSite[] = [
 ]
 
 const FRONTIER_PLANETS: readonly PlanetSite[] = [
-  { id: 'aurora-expanse', name: { pl: 'Zorza Graniczna', en: 'Frontier Aurora' }, color: '#668ea8', x: -9000, y: 3200, z: 61000, radius: 580 },
-  { id: 'iron-veil', name: { pl: 'Żelazna Zasłona', en: 'Iron Veil' }, color: '#956f62', x: 14000, y: -6000, z: 70000, radius: 720 },
-  { id: 'jade-silence', name: { pl: 'Jadeitowa Cisza', en: 'Jade Silence' }, color: '#548d76', x: -18000, y: -2200, z: 79000, radius: 460 },
-  { id: 'titan-rest', name: { pl: 'Spoczynek Tytana', en: 'Titan Rest' }, color: '#ac8763', x: 6000, y: 8500, z: 88000, radius: 1300 },
-  { id: 'silver-requiem', name: { pl: 'Srebrne Requiem', en: 'Silver Requiem' }, color: '#a4b1b7', x: 22000, y: -9000, z: 97000, radius: 510 },
-  { id: 'cobalt-depths', name: { pl: 'Kobaltowa Głębia', en: 'Cobalt Depths' }, color: '#42669c', x: -12000, y: 13000, z: 106000, radius: 980 },
-  { id: 'ember-cathedral', name: { pl: 'Katedra Żaru', en: 'Ember Cathedral' }, color: '#a95c49', x: 19000, y: 2000, z: 115000, radius: 640 },
-  { id: 'opal-drift', name: { pl: 'Opalowy Dryf', en: 'Opal Drift' }, color: '#82a5b1', x: -25000, y: -8000, z: 124000, radius: 420 },
-  { id: 'storm-cradle', name: { pl: 'Kolebka Burz', en: 'Storm Cradle' }, color: '#8f7da8', x: 9000, y: 14000, z: 133000, radius: 1500 },
-  { id: 'pilgrim-stone', name: { pl: 'Kamień Pielgrzyma', en: 'Pilgrim Stone' }, color: '#8d8c75', x: -5000, y: -14000, z: 142000, radius: 360 },
-  { id: 'nacre-throne', name: { pl: 'Tron Nacre', en: 'Nacre Throne' }, color: '#5aaca1', x: 25000, y: -5000, z: 151000, radius: 780 },
-  { id: 'night-estuary', name: { pl: 'Ujście Nocy', en: 'Night Estuary' }, color: '#605780', x: -20000, y: 7000, z: 160000, radius: 590 },
-  { id: 'rust-colossus', name: { pl: 'Rdzawy Kolos', en: 'Rusted Colossus' }, color: '#ad794f', x: -3000, y: -10000, z: 169000, radius: 1250 },
-  { id: 'frozen-psalm', name: { pl: 'Zamarznięty Psalm', en: 'Frozen Psalm' }, color: '#8cb4c4', x: -26000, y: -2000, z: 178000, radius: 670 },
-  { id: 'black-mirror', name: { pl: 'Czarne Zwierciadło', en: 'Black Mirror' }, color: '#626976', x: -15000, y: 14000, z: 187000, radius: 840 },
-  { id: 'last-garden', name: { pl: 'Ostatni Ogród', en: 'Last Garden' }, color: '#6c9b73', x: -18000, y: 10000, z: 198000, radius: 560 },
-  { id: 'horizon-end', name: { pl: 'Koniec Horyzontu', en: 'Horizon End' }, color: '#6489a9', x: -12000, y: -8000, z: 210000, radius: 1100 },
+  { id: 'aurora-expanse', name: localizedText(text => text.world.auroraExpanse), color: '#668ea8', x: -9000, y: 3200, z: 61000, radius: 580 },
+  { id: 'iron-veil', name: localizedText(text => text.world.ironVeil), color: '#956f62', x: 14000, y: -6000, z: 70000, radius: 720 },
+  { id: 'jade-silence', name: localizedText(text => text.world.jadeSilence), color: '#548d76', x: -18000, y: -2200, z: 79000, radius: 460 },
+  { id: 'titan-rest', name: localizedText(text => text.world.titanRest), color: '#ac8763', x: 6000, y: 8500, z: 88000, radius: 1300 },
+  { id: 'silver-requiem', name: localizedText(text => text.world.silverRequiem), color: '#a4b1b7', x: 22000, y: -9000, z: 97000, radius: 510 },
+  { id: 'cobalt-depths', name: localizedText(text => text.world.cobaltDepths), color: '#42669c', x: -12000, y: 13000, z: 106000, radius: 980 },
+  { id: 'ember-cathedral', name: localizedText(text => text.world.emberCathedral), color: '#a95c49', x: 19000, y: 2000, z: 115000, radius: 640 },
+  { id: 'opal-drift', name: localizedText(text => text.world.opalDrift), color: '#82a5b1', x: -25000, y: -8000, z: 124000, radius: 420 },
+  { id: 'storm-cradle', name: localizedText(text => text.world.stormCradle), color: '#8f7da8', x: 9000, y: 14000, z: 133000, radius: 1500 },
+  { id: 'pilgrim-stone', name: localizedText(text => text.world.pilgrimStone), color: '#8d8c75', x: -5000, y: -14000, z: 142000, radius: 360 },
+  { id: 'nacre-throne', name: localizedText(text => text.world.nacreThrone), color: '#5aaca1', x: 25000, y: -5000, z: 151000, radius: 780 },
+  { id: 'night-estuary', name: localizedText(text => text.world.nightEstuary), color: '#605780', x: -20000, y: 7000, z: 160000, radius: 590 },
+  { id: 'rust-colossus', name: localizedText(text => text.world.rustColossus), color: '#ad794f', x: -3000, y: -10000, z: 169000, radius: 1250 },
+  { id: 'frozen-psalm', name: localizedText(text => text.world.frozenPsalm), color: '#8cb4c4', x: -26000, y: -2000, z: 178000, radius: 670 },
+  { id: 'black-mirror', name: localizedText(text => text.world.blackMirror), color: '#626976', x: -15000, y: 14000, z: 187000, radius: 840 },
+  { id: 'last-garden', name: localizedText(text => text.world.lastGarden), color: '#6c9b73', x: -18000, y: 10000, z: 198000, radius: 560 },
+  { id: 'horizon-end', name: localizedText(text => text.world.horizonEnd), color: '#6489a9', x: -12000, y: -8000, z: 210000, radius: 1100 },
 ].map(planet => ({
   ...planet,
-  description: {
-    pl: 'Odległy świat poza dawnymi szlakami. Skaner wykrywa złoża surowców i ślady obcych patroli.',
-    en: 'A remote world beyond the old routes. Scanners detect resources and traces of foreign patrols.',
-  },
+  description: localizedText(text => text.world.aRemoteWorldBeyondTheOld),
 }))
 
 const OUTER_REACH_PLANETS: readonly PlanetSite[] = [
-  { id: 'blue-threshold', name: { pl: 'Błękitny Próg', en: 'Blue Threshold' }, color: '#6496bd', x: -36000, y: -12000, z: 222000, radius: 1400 },
-  { id: 'amber-vault', name: { pl: 'Bursztynowy Skarbiec', en: 'Amber Vault' }, color: '#bd985d', x: 34000, y: 22000, z: 230000, radius: 2600 },
-  { id: 'frost-prism', name: { pl: 'Mroźny Pryzmat', en: 'Frost Prism' }, color: '#8fb7c9', x: -51000, y: 14000, z: 238000, radius: 1000 },
-  { id: 'goliath-ocean', name: { pl: 'Ocean Goliata', en: 'Goliath Ocean' }, color: '#426ba8', x: 8000, y: -26000, z: 246000, radius: 3800 },
-  { id: 'red-pilgrimage', name: { pl: 'Czerwona Pielgrzymka', en: 'Red Pilgrimage' }, color: '#ba6d57', x: 56000, y: -14000, z: 254000, radius: 2000 },
-  { id: 'emerald-crown', name: { pl: 'Szmaragdowa Korona', en: 'Emerald Crown' }, color: '#5e9879', x: -24000, y: 28000, z: 262000, radius: 3000 },
-  { id: 'violet-observatory', name: { pl: 'Fioletowe Obserwatorium', en: 'Violet Observatory' }, color: '#937bb4', x: 42000, y: 4000, z: 270000, radius: 1500 },
-  { id: 'titan-nocturne', name: { pl: 'Nokturn Tytana', en: 'Titan Nocturne' }, color: '#6c7d9f', x: -58000, y: -24000, z: 278000, radius: 4200 },
-  { id: 'white-cairn', name: { pl: 'Biały Kurhan', en: 'White Cairn' }, color: '#b4bec0', x: -8000, y: -8000, z: 286000, radius: 1100 },
-  { id: 'copper-dawn', name: { pl: 'Miedziany Świt', en: 'Copper Dawn' }, color: '#b88961', x: 23000, y: 31000, z: 294000, radius: 2400 },
-  { id: 'serpent-depth', name: { pl: 'Głębia Węża', en: 'Serpent Depth' }, color: '#5a9291', x: -42000, y: 14000, z: 302000, radius: 1700 },
-  { id: 'silent-giant', name: { pl: 'Milczący Olbrzym', en: 'Silent Giant' }, color: '#a3987a', x: 56000, y: -28000, z: 310000, radius: 3300 },
-  { id: 'indigo-witness', name: { pl: 'Indygowy Świadek', en: 'Indigo Witness' }, color: '#646eac', x: -16000, y: 3000, z: 318000, radius: 2200 },
-  { id: 'broken-coral', name: { pl: 'Pęknięty Koral', en: 'Broken Coral' }, color: '#ac7974', x: -56000, y: 27000, z: 326000, radius: 1900 },
-  { id: 'oath-of-stone', name: { pl: 'Przysięga Kamienia', en: 'Oath of Stone' }, color: '#9a8d76', x: -28000, y: -22000, z: 334000, radius: 3800 },
-  { id: 'jade-reliquary', name: { pl: 'Jadeitowy Relikwiarz', en: 'Jade Reliquary' }, color: '#7aa590', x: -48000, y: 7000, z: 342000, radius: 1400 },
-  { id: 'last-anthem', name: { pl: 'Ostatni Hymn', en: 'Last Anthem' }, color: '#a098b5', x: -36000, y: 31000, z: 350000, radius: 2600 },
-  { id: 'deep-blue-throne', name: { pl: 'Tron Otchłani', en: 'Abyssal Throne' }, color: '#466e9c', x: -59000, y: -18000, z: 358000, radius: 4100 },
-  { id: 'pilgrim-haven', name: { pl: 'Azyl Pielgrzyma', en: 'Pilgrim Haven' }, color: '#93aaa4', x: -31000, y: -28000, z: 366000, radius: 1800 },
-  { id: 'ash-garden', name: { pl: 'Ogród Popiołu', en: 'Ash Garden' }, color: '#9c8170', x: -52000, y: 24000, z: 374000, radius: 3100 },
-  { id: 'crystal-dusk', name: { pl: 'Kryształowy Zmierzch', en: 'Crystal Dusk' }, color: '#8b9cb7', x: -40000, y: -10000, z: 382000, radius: 1600 },
-  { id: 'eternal-drift', name: { pl: 'Wieczny Dryf', en: 'Eternal Drift' }, color: '#6b929d', x: -61000, y: 8000, z: 394000, radius: 2700 },
-  { id: 'meridian-colossus', name: { pl: 'Kolos Meridian', en: 'Meridian Colossus' }, color: '#8d817d', x: -29000, y: -29000, z: 406000, radius: 3900 },
-  { id: 'beyond-the-veil', name: { pl: 'Za Zasłoną', en: 'Beyond the Veil' }, color: '#7888ba', x: -50000, y: 25000, z: 420000, radius: 2300 },
-].map(planet => ({ ...planet, description: {
-  pl: 'Ogromny świat na rubieżach Meridian. Wokół złóż krążą uzbrojone patrole.',
-  en: 'A vast world on the Meridian frontier. Armed patrols circle its deposits.',
-} }))
+  { id: 'blue-threshold', name: localizedText(text => text.world.blueThreshold), color: '#6496bd', x: -36000, y: -12000, z: 222000, radius: 1400 },
+  { id: 'amber-vault', name: localizedText(text => text.world.amberVault), color: '#bd985d', x: 34000, y: 22000, z: 230000, radius: 2600 },
+  { id: 'frost-prism', name: localizedText(text => text.world.frostPrism), color: '#8fb7c9', x: -51000, y: 14000, z: 238000, radius: 1000 },
+  { id: 'goliath-ocean', name: localizedText(text => text.world.goliathOcean), color: '#426ba8', x: 8000, y: -26000, z: 246000, radius: 3800 },
+  { id: 'red-pilgrimage', name: localizedText(text => text.world.redPilgrimage), color: '#ba6d57', x: 56000, y: -14000, z: 254000, radius: 2000 },
+  { id: 'emerald-crown', name: localizedText(text => text.world.emeraldCrown), color: '#5e9879', x: -24000, y: 28000, z: 262000, radius: 3000 },
+  { id: 'violet-observatory', name: localizedText(text => text.world.violetObservatory), color: '#937bb4', x: 42000, y: 4000, z: 270000, radius: 1500 },
+  { id: 'titan-nocturne', name: localizedText(text => text.world.titanNocturne), color: '#6c7d9f', x: -58000, y: -24000, z: 278000, radius: 4200 },
+  { id: 'white-cairn', name: localizedText(text => text.world.whiteCairn), color: '#b4bec0', x: -8000, y: -8000, z: 286000, radius: 1100 },
+  { id: 'copper-dawn', name: localizedText(text => text.world.copperDawn), color: '#b88961', x: 23000, y: 31000, z: 294000, radius: 2400 },
+  { id: 'serpent-depth', name: localizedText(text => text.world.serpentDepth), color: '#5a9291', x: -42000, y: 14000, z: 302000, radius: 1700 },
+  { id: 'silent-giant', name: localizedText(text => text.world.silentGiant), color: '#a3987a', x: 56000, y: -28000, z: 310000, radius: 3300 },
+  { id: 'indigo-witness', name: localizedText(text => text.world.indigoWitness), color: '#646eac', x: -16000, y: 3000, z: 318000, radius: 2200 },
+  { id: 'broken-coral', name: localizedText(text => text.world.brokenCoral), color: '#ac7974', x: -56000, y: 27000, z: 326000, radius: 1900 },
+  { id: 'oath-of-stone', name: localizedText(text => text.world.oathOfStone), color: '#9a8d76', x: -28000, y: -22000, z: 334000, radius: 3800 },
+  { id: 'jade-reliquary', name: localizedText(text => text.world.jadeReliquary), color: '#7aa590', x: -48000, y: 7000, z: 342000, radius: 1400 },
+  { id: 'last-anthem', name: localizedText(text => text.world.lastAnthem), color: '#a098b5', x: -36000, y: 31000, z: 350000, radius: 2600 },
+  { id: 'deep-blue-throne', name: localizedText(text => text.world.deepBlueThrone), color: '#466e9c', x: -59000, y: -18000, z: 358000, radius: 4100 },
+  { id: 'pilgrim-haven', name: localizedText(text => text.world.pilgrimHaven), color: '#93aaa4', x: -31000, y: -28000, z: 366000, radius: 1800 },
+  { id: 'ash-garden', name: localizedText(text => text.world.ashGarden), color: '#9c8170', x: -52000, y: 24000, z: 374000, radius: 3100 },
+  { id: 'crystal-dusk', name: localizedText(text => text.world.crystalDusk), color: '#8b9cb7', x: -40000, y: -10000, z: 382000, radius: 1600 },
+  { id: 'eternal-drift', name: localizedText(text => text.world.eternalDrift), color: '#6b929d', x: -61000, y: 8000, z: 394000, radius: 2700 },
+  { id: 'meridian-colossus', name: localizedText(text => text.world.meridianColossus), color: '#8d817d', x: -29000, y: -29000, z: 406000, radius: 3900 },
+  { id: 'beyond-the-veil', name: localizedText(text => text.world.beyondTheVeil), color: '#7888ba', x: -50000, y: 25000, z: 420000, radius: 2300 },
+].map(planet => ({ ...planet, description: localizedText(text => text.world.aVastWorldOnTheMeridian) }))
 
 const BASE_PLANETS: readonly PlanetSite[] = [
   ...PREVIOUS_ORION_PLANETS.map(planet => ({
@@ -524,7 +462,7 @@ export function activateGalaxy(seed: number) {
 export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld {
   const galaxy = getGalaxy(id)
   const merchant: MerchantSite = {
-    name: { pl: 'Arka Wymiany', en: 'Exchange Ark' },
+    name: localizedText(text => text.world.exchangeArk),
     x: -880, y: 160, z: 3100, radius: 230, tradeRange: 1150,
   }
   if (id === ORION_SECTOR_ID) return { galaxy, bounds: ORION_SECTOR_BOUNDS, planets: ORION_PLANETS, stations: ALL_HANGARS, drones: ORION_DRONES, sun: ORION_SUN, merchant }
@@ -532,19 +470,19 @@ export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld 
   const seed = (campaignSeed ^ galaxy.seedSalt) >>> 0 || 1
   const side = id === 'vesper' ? -1 : 1
   const sun = {
-    id: `${id}-sun`, name: { pl: `Słońce ${galaxy.name}`, en: `${galaxy.name} Sun` },
+    id: `${id}-sun`, name: localizedText(text => formatText(text.world.sun, { name: galaxy.name })),
     x: 640000 * side, y: 145000, z: 3910000 + seed % 800000,
     radius: 240000 + seed % 45000, heatRange: 20000,
   }
   const ports = ORION_STATIONS.map((station, index): StationSite => ({
     ...station, id: `${id}-${station.id}`, x: station.x * side,
-    name: { pl: `${['Port', 'Przekaźnik', 'Stocznia'][index]} ${galaxy.name}`, en: `${galaxy.name} ${['Port', 'Relay', 'Shipyard'][index]}` },
+    name: localizedText(text => formatText(text.world.remotePortNames[index], { galaxy: galaxy.name })),
     color: galaxy.color,
     launchPosition: { ...station.launchPosition, x: station.launchPosition.x * side },
   }))
   const planets = buildGalaxyLayout(BASE_PLANETS, seed, ports, sun).map((planet, index) => ({
     ...planet, id: `${id}-${planet.id}`,
-    name: { pl: `${galaxy.name} · ${planet.name.pl}`, en: `${galaxy.name} · ${planet.name.en}` },
+    name: localizedText((text, language) => formatText(text.world.remotePlanetName, { galaxy: galaxy.name, planet: planet.name[language] })),
     color: [planet.color, galaxy.color, galaxy.sunColor][index % 3],
   }))
   const stations = [...ports, ...buildPlanetHangars(planets)]

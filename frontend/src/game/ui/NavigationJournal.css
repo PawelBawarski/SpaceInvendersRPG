@@ -69,8 +69,7 @@
 .chart-pilot { fill: #e3fbff; stroke: #0c2d40; stroke-width: 1; }
 .chart-planet { stroke: #ccf1ff; stroke-opacity: .25; stroke-width: .8; vector-effect: non-scaling-stroke; }
 .journal-star-chart text { fill: #e5f3fc; font-family: inherit; paint-order: stroke; stroke: #071524; stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
-.journal-chart-tools { display: flex; gap: 5px; align-items: center; }
-.journal-chart-tools > span { margin-right: auto; color: #abd0e2; font-size: 12px; }
+.journal-chart-tools { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
 .journal-chart-tools button, .journal-tabs button {
   min-width: 32px;
   height: 29px;

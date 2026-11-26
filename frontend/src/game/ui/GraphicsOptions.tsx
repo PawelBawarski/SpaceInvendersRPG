@@ -1,3 +1,4 @@
+import { gameText } from '../i18n'
 import { RENDER_SCALES, type GameSettings } from '../progress/gameSettings'
 
 export function GraphicsOptions({ settings, onChange, compact = false }: {
@@ -5,25 +6,24 @@ export function GraphicsOptions({ settings, onChange, compact = false }: {
   onChange: (change: Partial<GameSettings>) => void
   compact?: boolean
 }) {
-  const pl = settings.language === 'pl'
   const row = compact ? 'game-setting-row graphics-option' : 'setting-row graphics-option'
   const toggles = [
-    ['bloom', pl ? 'Poświata światła' : 'Bloom'],
-    ['engineParticles', pl ? 'Cząsteczki silników' : 'Engine particles'],
-    ['speedEffects', pl ? 'Smugi i zmiana pola widzenia' : 'Speed streaks and field of view'],
-    ['planetAtmospheres', pl ? 'Poświata planet' : 'Planet atmospheres'],
-    ['hangarShadows', pl ? 'Cienie w hangarze' : 'Hangar shadows'],
+    ['bloom', gameText(settings.language).graphics.bloom],
+    ['engineParticles', gameText(settings.language).graphics.engineParticles],
+    ['speedEffects', gameText(settings.language).graphics.speedStreaksAndFieldOfView],
+    ['planetAtmospheres', gameText(settings.language).graphics.planetAtmospheres],
+    ['hangarShadows', gameText(settings.language).graphics.hangarShadows],
   ] as const
 
   return <fieldset className="graphics-options">
-    <legend>{pl ? 'Wydajność grafiki' : 'Graphics performance'}</legend>
+    <legend>{gameText(settings.language).graphics.graphicsPerformance}</legend>
     <label className={row}>
-      <span>{pl ? 'Skala renderowania' : 'Render scale'}</span>
+      <span>{gameText(settings.language).graphics.renderScale}</span>
       <select value={settings.renderScale ?? ''} onChange={event => {
         const scale = Number(event.currentTarget.value)
         onChange({ renderScale: RENDER_SCALES.find(option => option === scale) ?? null })
       }}>
-        <option value="">{pl ? 'Według jakości' : 'From preset'}</option>
+        <option value="">{gameText(settings.language).graphics.fromPreset}</option>
         {RENDER_SCALES.map(scale => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}
       </select>
     </label>

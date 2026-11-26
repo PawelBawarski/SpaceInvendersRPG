@@ -1,4 +1,4 @@
-import { Color3, MeshBuilder, Scene, StandardMaterial, TransformNode } from '@babylonjs/core'
+import { Color3, MeshBuilder, Scene, StandardMaterial, TransformNode } from './babylon'
 import { LANDING_GEAR_GEOMETRY } from '../simulation/HangarLanding'
 
 /** Articulated gear shares the ship transform and shadow map, including its moving feet. */

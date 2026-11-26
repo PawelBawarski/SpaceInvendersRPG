@@ -1,16 +1,17 @@
+import { formatText, gameText, localizedText, type GameLanguage, type LocalizedText } from '../i18n'
 import { PLANET_CONTACT_RANGE } from '../domain/planetOrbit'
 import { ORBIT_ENTRY_DURATION, ORBIT_EXIT_DURATION, samplePlanetApproach } from '../simulation/PlanetApproach'
 import { forwardRotation } from '../simulation/StationApproach'
 import { useEffect, useRef, useState } from 'react'
-import { Color3, Color4, Engine, FreeCamera, GlowLayer, HemisphericLight, Matrix, Quaternion, Scene, TransformNode, Vector3 } from '@babylonjs/core'
+import { Color3, Color4, Engine, FreeCamera, GlowLayer, HemisphericLight, Matrix, Quaternion, Scene, SelectionOutlineLayer, TransformNode, Vector3 } from './babylon'
 import { GameAudio } from '../audio/GameAudio'
-import { resolveDamage } from '../domain/combat'
+import { DODGE_DURATION, resolveDamage } from '../domain/combat'
 import { applyDamageResistance, type DamageType } from '../domain/damageTypes'
 import { getDamageBearing, type DamageSource } from '../domain/damageFeedback'
 import { BASE_RADAR_RANGE, projectRadarContacts, type RadarBlip } from '../domain/flightRadar'
 import {
   distanceBetween, distanceToPlanetSurface, findNearestPlanet, findNearbyPlanet, findNearestStation, resolveSafeFlightPosition,
-  FACTIONS, MERCHANT_COURSE_ID, ORION_START_POSITION,
+  FACTIONS, MERCHANT_COURSE_ID,
   type GalaxyWorld, type PlanetSite, type SectorPosition, type StationSite,
 } from '../domain/exploration'
 import { InputController, type ControlBindings } from '../input/InputController'
@@ -19,11 +20,12 @@ import type { GraphicsSettings } from '../progress/gameSettings'
 import type { MissionProgress } from '../progress/missionProgress'
 import { getShipResistances } from '../progress/missionProgress'
 import { OVERDRIVE } from '../progress/pilotSkills'
+import { PLAYER_WEAPON } from '../domain/weapon'
 import { SHIP_PART_SLOTS, type EquippedPartRarities, type ShipPartBonuses } from '../progress/shipParts'
-import { advanceFlightMotion, FLIGHT_SPEEDS, getDodgeCooldown, getFlightTargetSpeed, integrateShipRoll, readFlightUpdate } from '../simulation/FlightSimulation'
+import { advanceFlightMotion, FLIGHT_SPEEDS, FLIGHT_STEERING, getDodgeCooldown, getFlightTargetSpeed, integrateShipRoll, readFlightUpdate } from '../simulation/FlightSimulation'
 import { HYPERSPACE_SECONDS, type GalaxyId } from '../domain/galaxyChart'
 import { BOUNDARY_TRANSIT_SECONDS, clampGalaxyPosition, getBoundaryCourses, isGalaxyBoundary } from '../simulation/GalaxyTransit'
-import type { ShipTelemetry } from '../domain/shipTelemetry'
+import { getMaximumShipVitals, type ShipTelemetry } from '../domain/shipTelemetry'
 import { getShipVitals } from '../progress/shipMaintenance'
 import { advanceSolarExposure, createSolarExposureState } from '../simulation/SolarExposure'
 import { ShipStatusHud } from '../ui/ShipStatusHud'
@@ -35,6 +37,7 @@ import { createCombatImpacts } from './CombatImpacts'
 import { createPlanetScanEffect } from './PlanetScanEffect'
 import { createSectorStarField } from './SectorStarField'
 import { createShipVisual, setShipDrivePower, type ShipDrive } from './shipVisual'
+import { CRITICAL_HULL_FRACTION, showHullDamage } from './HullDamage'
 import { createShipHeadlights } from './ShipHeadlights'
 import { createSpaceEnvironment } from './spaceEnvironment'
 import { createPlanetField } from './PlanetField'
@@ -42,7 +45,8 @@ import { createShipBurnEffect, createSunVisual } from './StarHazard'
 import { createStationSystem } from './StationDocking'
 import { createMerchantShip } from './MerchantShip'
 import { createWorldCombat, type WorldCombatStatus } from './WorldCombat'
-import { segmentSphereContact } from './worldCombatMath'
+import { keepCameraOutsidePlanets, segmentSphereContact } from './worldCombatMath'
+import { segmentBoundsOverlapSphere } from './collisionBroadphase'
 import { projectEnemyNameplates, type EnemyNameplate } from './EnemyNameplates'
 import { getHardwareScaling, spaceEffectsProfile } from './spaceEffectsProfile'
 import { enableSectorDepth } from './sectorDepth'
@@ -50,7 +54,7 @@ import './WorldSector.css'
 
 interface SectorCanvasProps {
   world: GalaxyWorld
-  language: 'pl' | 'en'
+  language: GameLanguage
   graphics: GraphicsSettings
   controls: ControlBindings
   mainVolume: number
@@ -64,6 +68,7 @@ interface SectorCanvasProps {
   progress: MissionProgress
   activeMission: MissionId | null
   trackedStationId?: string | null
+  repairStation?: StationSite
   paused: boolean
   boundaryCourse: boolean
   jumpDestination: GalaxyId | null
@@ -77,6 +82,7 @@ interface SectorCanvasProps {
   onDroneRespawn: (droneId: string) => void
   onOrbitChange: (planetId: string | null) => void
   onSectorPositionChange: (position: SectorPosition, origin: GalaxyId) => void
+  onShipDestroyed: (position: SectorPosition, origin: GalaxyId) => void
   onMissionComplete: (missionId: MissionId) => void
   onMissionObjectiveProgress: (missionId: MissionId, count: number) => void
   onDockingStart: (stationId: string) => void
@@ -92,15 +98,24 @@ interface SectorCanvasProps {
 
 interface Waypoint { x: number; y: number; distance: number; name: string; behind: boolean }
 interface StationBeacon extends Waypoint { id: string; selected: boolean }
+const HUD_UPDATE_SECONDS = 0.12
+const DOCKING_HUD_UPDATE_SECONDS = 0.1
+const FLIGHT_SAVE_SECONDS = 0.8
+const FLIGHT_MESSAGE_SECONDS = 5
+const DAMAGE_MARKER_MILLISECONDS = 1400
+const MAX_DAMAGE_MARKERS = 4
+const CAMERA_SURFACE_CLEARANCE = 1.8
+const CHASE_HEIGHT = 4
+const CRITICAL_HULL_FLAME = .34
+const PLANET_IMPACT = { collisionPadding: 2.4, recoveryPadding: 3.2, damage: 30, cooldownSeconds: 1.1 } as const
 const EMPTY_COMBAT: WorldCombatStatus = {
   mission: null, boss: null, completedObjectives: 0, requiredObjectives: 0,
-  engaged: false, targetName: null, targetHealth: 0, targetMaximumHealth: 0, faction: null,
+  engaged: false,
 }
 
 export function SectorCanvas(props: SectorCanvasProps) {
   const { world, language, graphics, controls, mainVolume, shotsVolume, musicVolume, mouseSensitivity,
     shipBonuses, equippedPartRarities, progress, paused } = props
-  const polish = language === 'pl'
   const live = useRef(props)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inputRef = useRef<InputController | null>(null)
@@ -117,10 +132,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
   const positionRef = useRef<SectorPosition>(initialPosition)
   const [position, setPosition] = useState(initialPosition)
   const [nearestPlanet, setNearestPlanet] = useState<PlanetSite | null>(() => findNearestPlanet(initialPosition, world.planets))
-  const [scanDistance, setScanDistance] = useState(() => {
-    const planet = findNearestPlanet(initialPosition, world.planets)
-    return planet ? distanceToPlanetSurface(initialPosition, planet) : 0
-  })
+  const [scanDistance, setScanDistance] = useState(() => nearestPlanet ? distanceToPlanetSurface(initialPosition, nearestPlanet) : 0)
   const [inScanRange, setInScanRange] = useState(() => findNearbyPlanet(initialPosition, world.planets) !== null)
   const [station, setStation] = useState<StationSite | null>(null)
   const [vitals, setVitals] = useState(() => ({ ...getShipVitals(progress), dodge: 0 }))
@@ -137,7 +149,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
   const [atBoundary, setAtBoundary] = useState(false)
   const [boundaryProgress, setBoundaryProgress] = useState(0)
   const [solarHeat, setSolarHeat] = useState({ intensity: 0, distance: Infinity, inZone: false })
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<LocalizedText | null>(null)
   const [impactFlash, setImpactFlash] = useState(0)
   const [docking, setDocking] = useState({ active: false, progress: 0, stage: 'idle', fade: 0 })
   useEffect(() => { live.current = props }, [props])
@@ -167,18 +179,20 @@ export function SectorCanvas(props: SectorCanvasProps) {
     scene.skipPointerMovePicking = true
     scene.skipPointerDownPicking = true
     scene.skipPointerUpPicking = true
-    scene.clearColor = new Color4(0.001, 0.003, 0.008, 1)
-    createSpaceEnvironment(scene, quality, {
+    scene.clearColor = new Color4(.0005, .001, .004, 1)
+    const starlight = createSpaceEnvironment(scene, quality, {
       decorativePlanet: false,
       skyDiameter: bounds.maxZ * 3,
       skyTint: Color3.FromHexString(galaxy.color),
     })
-    const camera = new FreeCamera('sectorCamera', new Vector3(0, 6, -15), scene)
+    starlight.diffuse = Color3.Lerp(Color3.White(), Color3.FromHexString(galaxy.sunColor), .26)
+    const camera = new FreeCamera('sectorCamera', new Vector3(0, CHASE_HEIGHT, -15), scene)
     // The chase camera stays over ten meters away; keep depth precision for large planets.
     camera.minZ = 1
     camera.maxZ = Math.max(140000, bounds.maxZ * 2.5)
     const light = new HemisphericLight('sectorLight', new Vector3(0.3, 1, -0.25), scene)
-    light.intensity = 0.34
+    light.intensity = .17
+    light.renderPriority = 1
     light.groundColor = new Color3(0.03, 0.05, 0.09)
     const effectsProfile = spaceEffectsProfile(quality)
     const glow = new GlowLayer('sectorGlow', scene, { mainTextureRatio: effectsProfile.glowRatio, blurKernelSize: effectsProfile.glowKernel })
@@ -193,8 +207,14 @@ export function SectorCanvas(props: SectorCanvasProps) {
     appearance.name = 'playerShipAppearance'
     appearance.parent = ship
     ship.position.set(positionRef.current.x, positionRef.current.y, positionRef.current.z)
-    camera.position.copyFrom(ship.position).addInPlaceFromFloats(0, 6, -15)
-    camera.setTarget(ship.position.add(new Vector3(0, 0, 9)))
+    const protectCamera = () => keepCameraOutsidePlanets(ship.position, camera.position, planetSites, CAMERA_SURFACE_CLEARANCE)
+    const focusCamera = (point: Vector3) => {
+      protectCamera()
+      camera.setTarget(point)
+    }
+    const sight = { origin: camera.position, direction: new Vector3(), convergence: new Vector3() }
+    camera.position.copyFrom(ship.position).addInPlaceFromFloats(0, CHASE_HEIGHT, -15)
+    focusCamera(ship.position.add(new Vector3(0, 0, PLAYER_WEAPON.sightConvergence)))
     const planets = createPlanetField(scene, planetSites, quality)
     const sun = createSunVisual(scene, sunSite, quality, galaxy.sunColor)
     const merchant = createMerchantShip(scene, merchantSite)
@@ -235,11 +255,18 @@ export function SectorCanvas(props: SectorCanvasProps) {
     window.addEventListener('pointerdown', unlockAudio, { once: true })
     const damageNumbers: FloatingDamageNumber[] = []
     const impactEffects = createCombatImpacts(scene)
-    const maximumShield = () => 100 + live.current.progress.shieldLevel * 10 + live.current.shipBonuses.shieldPoints
-    const maximumHull = () => 100 + live.current.progress.shieldLevel * 5 + live.current.shipBonuses.hullPoints
-    const initialVitals = getShipVitals(settings.progress)
+    let targetOutline: SelectionOutlineLayer | null = null
+    let maximum = getMaximumShipVitals(settings.progress.shieldLevel, settings.shipBonuses)
+    const radarLandmarks = [
+      ...stationSites.map(site => ({ ...site, kind: 'station' as const })),
+      { ...merchantSite, id: MERCHANT_COURSE_ID, kind: 'merchant' as const },
+    ]
+    const initialVitals = getShipVitals(settings.progress, maximum)
     let shield = initialVitals.shield
     let hull = initialVitals.hull
+    const flameIntensity = () => Math.max(solar.burningIntensity,
+      CRITICAL_HULL_FLAME * Math.max(0, 1 - hull / (maximum.hull * CRITICAL_HULL_FRACTION)))
+    showHullDamage(appearance, hull / maximum.hull)
     let speed = 0
     let collisionClock = 0
     let dodgeRemaining = 0
@@ -250,30 +277,40 @@ export function SectorCanvas(props: SectorCanvasProps) {
     let messageClock = 0
     let engaged = false
     let completedDocking = false
+    let recovering = false
     let damageSequence = 0
     let boundaryTransit: { from: Vector3; to: Vector3; direction: Vector3; startedAt: number } | null = null
     let jumpStartedAt: number | null = null
     let jumpFinished = false
     const shipPosition = (): SectorPosition => ({ x: ship.position.x, y: ship.position.y, z: ship.position.z })
+    const recoverIfDestroyed = () => {
+      if (hull > 0) return false
+      recovering = true
+      input.setSuspended(true)
+      audio.updateEngine(0, 0)
+      live.current.onShipDestroyed(shipPosition(), galaxy.id)
+      return true
+    }
     const savePosition = () => {
       positionRef.current = shipPosition()
       live.current.onSectorPositionChange(positionRef.current, galaxy.id)
     }
-    const showMessage = (pl: string, en: string) => {
-      setMessage(live.current.language === 'pl' ? pl : en)
-      messageClock = 5
+    const showMessage = (message: LocalizedText) => {
+      setMessage(message)
+      messageClock = FLIGHT_MESSAGE_SECONDS
     }
     const receiveDamage = (amount: number, type: DamageType = 'kinetic', continuous = false, source?: DamageSource) => {
       const resistedAmount = applyDamageResistance(amount, type, resistances)
-      const damage = resolveDamage({ amount: resistedAmount, shield, dodgeElapsed, activeDodge: !continuous && source?.kind !== 'collision' && dodgeElapsed < 0.48 })
+      const damage = resolveDamage({ amount: resistedAmount, shield, dodgeElapsed, activeDodge: !continuous && source?.kind !== 'collision' && dodgeElapsed < DODGE_DURATION })
       shield = Math.max(0, shield - damage.shieldDamage)
       hull = Math.max(0, hull - damage.hullDamage)
+      if (damage.hullDamage > 0) showHullDamage(appearance, hull / maximum.hull)
       if (damage.amount <= 0) return
       if (source) {
         const bearing = getDamageBearing(ship.position, camera.getDirection(Vector3.Forward()), camera.getDirection(Vector3.Right()), source.position)
         if (bearing) {
           const hit = { ...bearing, id: ++damageSequence, createdAt: performance.now(), source }
-          setIncomingDamage(previous => [...previous.filter(item => performance.now() - item.createdAt < 1400), hit].slice(-4))
+          setIncomingDamage(previous => [...previous.filter(item => hit.createdAt - item.createdAt < DAMAGE_MARKER_MILLISECONDS), hit].slice(-MAX_DAMAGE_MARKERS))
         }
       }
       live.current.onShipStatusChange?.({ shield, hull, speed, dodgeRemaining, burningIntensity: solar.burningIntensity })
@@ -303,7 +340,19 @@ export function SectorCanvas(props: SectorCanvasProps) {
         const offset = new Vector3(inside.x, inside.y, inside.z).subtractInPlace(ship.position)
         ship.position.addInPlace(offset)
         camera.position.addInPlace(offset)
+        protectCamera()
         speed *= .24
+      },
+      onAimChanged: target => {
+        targetOutline?.clearSelection()
+        if (!target) return
+        if (!targetOutline) {
+          // The direct sight test already excludes targets behind planets.
+          targetOutline = new SelectionOutlineLayer('flightTargetOutline', scene, { mainTextureRatio: .5, useDepthOcclusion: false })
+          targetOutline.outlineColor = Color3.FromHexString('#eeb187')
+          targetOutline.outlineThickness = 1.35
+        }
+        targetOutline.addSelection(target.getChildMeshes(true).filter(mesh => !mesh.name.startsWith('hull-damage-')))
       },
       damageNumbers,
     }, settings.world)
@@ -314,7 +363,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
       let contact = Infinity
       let collision: PlanetSite | null = null
       for (const planet of planetSites) {
-        const hit = segmentSphereContact(ship.position, destination, planet, planet.radius + 2.4)
+        const radius = planet.radius + PLANET_IMPACT.collisionPadding
+        if (!segmentBoundsOverlapSphere(ship.position, destination, planet, radius)) continue
+        const hit = segmentSphereContact(ship.position, destination, planet, radius)
         if (hit !== null && hit < contact) { collision = planet; contact = hit }
       }
       if (!collision) { ship.position.copyFrom(destination); return }
@@ -322,12 +373,12 @@ export function SectorCanvas(props: SectorCanvasProps) {
       const point = Vector3.Lerp(ship.position, destination, contact)
       const away = point.subtract(center)
       if (away.lengthSquared() < 0.01) away.set(0, 0, -1)
-      ship.position.copyFrom(center.add(away.normalize().scale(collision.radius + 3.2)))
+      ship.position.copyFrom(center.add(away.normalize().scale(collision.radius + PLANET_IMPACT.recoveryPadding)))
       speed = 0
       if (collisionClock <= 0) {
-        receiveDamage(30, 'kinetic', false, { position: collision, label: collision.name, kind: 'collision' })
-        collisionClock = 1.1
-        showMessage(`Zderzenie z ${collision.name.pl}. Omiń powierzchnię planety.`, `Impact with ${collision.name.en}. Steer around the planet.`)
+        receiveDamage(PLANET_IMPACT.damage, 'kinetic', false, { position: collision, label: collision.name, kind: 'collision' })
+        collisionClock = PLANET_IMPACT.cooldownSeconds
+        showMessage(localizedText((text, language) => formatText(text.flight.planetImpact, { planet: collision.name[language] })))
       }
     }
     const updateWaypoint = () => {
@@ -342,7 +393,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
           y: behind ? 50 : clamp(point.y / engine.getRenderHeight() * 100, 28, 58), behind,
           distance: Vector3.Distance(ship.position, target), name }
       }
-      const guide = mission ? project(navigationTarget ?? mission.worldPosition, mission.title[live.current.language]) : null
+      const encounter = worldCombat.getStatus()
+      const nearbyObjective = encounter.boss && encounter.mission?.id === mission?.id
+      const guide = mission && !nearbyObjective ? project(navigationTarget ?? mission.worldPosition, mission.title[live.current.language]) : null
       setWaypoint(guide)
       const nearest = findNearestStation(ship.position, stationSites)
       const beacon = project(nearest, nearest.name[live.current.language])
@@ -360,6 +413,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
     const resize = () => engine.resize()
     window.addEventListener('resize', resize)
     scene.onBeforeRenderObservable.add(() => {
+      if (recovering) return
       updateDamageNumbers(damageNumbers)
       const current = live.current
       const realDt = Math.min(engine.getDeltaTime() / 1000, 0.15)
@@ -378,13 +432,17 @@ export function SectorCanvas(props: SectorCanvasProps) {
         return
       }
       effects.setPaused(current.paused)
+      if (targetOutline) targetOutline.isEnabled = !current.paused
       if (current.paused) audio.updateEngine(0, 0)
-      if (current.paused) burning.update(0, solar.burningIntensity, true)
+      if (current.paused) burning.update(0, flameIntensity(), true)
       if (current.paused || current.renderActive === false) return
+      if (recoverIfDestroyed()) return
       const dt = realDt
       if (previousStats !== current.progress) {
+        if (previousStats.shipParts !== current.progress.shipParts || previousStats.equippedParts !== current.progress.equippedParts
+          || previousStats.pilotSkills !== current.progress.pilotSkills) resistances = getShipResistances(current.progress)
         previousStats = current.progress
-        resistances = getShipResistances(current.progress)
+        maximum = getMaximumShipVitals(current.progress.shieldLevel, current.shipBonuses)
       }
       if (lightsOn !== current.shipLights) {
         lightsOn = current.shipLights
@@ -404,10 +462,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
         effects = createFlightEffects(scene, ship, camera, current.graphics.graphicsQuality, FLIGHT_SPEEDS.cruise, appearance)
         effects.configure(current.graphics)
       }
-      const nextMaximumShield = maximumShield()
-      const nextMaximumHull = maximumHull()
-      shield = clamp(shield, 0, nextMaximumShield)
-      hull = clamp(hull, 0, nextMaximumHull)
+      shield = clamp(shield, 0, maximum.shield)
+      hull = clamp(hull, 0, maximum.hull)
+      showHullDamage(appearance, hull / maximum.hull)
       if (pendingDock.current) {
         const id = pendingDock.current
         pendingDock.current = null
@@ -420,13 +477,14 @@ export function SectorCanvas(props: SectorCanvasProps) {
       }
       const dock = stations.update(engine.getDeltaTime() / 1000, current.dockingReady)
       if (dock.active || dock.complete) {
+        protectCamera()
         effects.setPaused(true)
         const power = dock.departing ? .28 + .58 * Math.sin(dock.progress * Math.PI) : .21 + .21 * Math.sin(dock.progress * Math.PI)
         setShipDrivePower(appearance.metadata.drive as ShipDrive, power, performance.now() / 1000)
         audio.updateEngine(power * .37, power * .24)
         canvas.dataset.engineSound = 'cruise'
         hudClock += realDt
-        if (hudClock >= 0.1 || dock.complete) {
+        if (hudClock >= DOCKING_HUD_UPDATE_SECONDS || dock.complete) {
           hudClock = 0
           setDocking({ active: true, progress: dock.progress, stage: dock.stage, fade: dock.fade })
         }
@@ -436,9 +494,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
         if (dock.complete && dock.stationId) {
           if (dock.departing) {
             setDocking({ active: false, progress: 1, stage: 'idle', fade: 0 })
-            canvas.dataset.stationTransit = 'idle'
             savePosition()
             current.onDepartureComplete?.()
+            canvas.dataset.stationTransit = 'idle'
           } else if (!completedDocking) {
             completedDocking = true
             current.onDockingComplete(dock.stationId)
@@ -475,7 +533,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
           setBoundaryProgress(0)
         } else {
           current.onBoundaryCourseFailure()
-          showMessage('Kurs do granicy jest zablokowany. Wyleć na otwartą przestrzeń.', 'Boundary course is blocked. Fly into open space.')
+          showMessage(localizedText(text => text.flight.blockedBoundaryCourse))
         }
       }
       if (boundaryTransit) {
@@ -489,10 +547,10 @@ export function SectorCanvas(props: SectorCanvasProps) {
           Math.min(1, dt * 8), ship.rotationQuaternion!)
         const direction = ship.getDirection(Vector3.Forward())
         camera.position.copyFrom(ship.position).subtractInPlace(direction.scale(17)).addInPlaceFromFloats(0, 5, -4 * Math.abs(direction.y))
-        camera.setTarget(ship.position.add(direction.scale(20)))
+        focusCamera(ship.position.add(direction.scale(20)))
         stars.update(ship.position)
         planets.update(dt, ship.position)
-        sun.update(dt)
+        sun.update(dt, ship.position)
         merchant.update(ship.position)
         effects.update(dt, FLIGHT_SPEEDS.cruise * (0.8 + travelFraction), 1, true)
         audio.updateEngine(1, 1)
@@ -514,8 +572,10 @@ export function SectorCanvas(props: SectorCanvasProps) {
       collisionClock = Math.max(0, collisionClock - dt)
       dodgeRemaining = Math.max(0, dodgeRemaining - dt)
       dodgeElapsed += dt
-      messageClock = Math.max(0, messageClock - dt)
-      if (messageClock === 0) setMessage(previous => previous ? '' : previous)
+      if (messageClock > 0) {
+        messageClock = Math.max(0, messageClock - dt)
+        if (messageClock === 0) setMessage(null)
+      }
       hudClock += dt
       saveClock += dt
       if (pendingOrbit.current && !orbitTransit) {
@@ -540,10 +600,10 @@ export function SectorCanvas(props: SectorCanvasProps) {
         Quaternion.SlerpToRef(ship.rotationQuaternion!, target, Math.min(1, realDt * 3), ship.rotationQuaternion!)
         const desiredCamera = ship.position.subtract(ship.getDirection(Vector3.Forward()).scale(18)).addInPlaceFromFloats(0, 6, 0)
         Vector3.LerpToRef(camera.position, desiredCamera, Math.min(1, realDt * 3), camera.position)
-        camera.setTarget(ship.position.add(direction.scale(25)))
+        focusCamera(ship.position.add(direction.scale(25)))
         stars.update(ship.position)
         planets.update(dt, ship.position)
-        sun.update(dt)
+        sun.update(dt, ship.position)
         effects.update(dt, 100, 0.5)
         audio.updateEngine(0.4, 0.5)
         setPlanetTravel(previous => Math.abs(previous.progress - transit.progress) > 0.02 || !previous.active ? { active: true, progress: transit.progress, leaving: transit.leaving, name: transit.planet.name[current.language] } : previous)
@@ -565,7 +625,8 @@ export function SectorCanvas(props: SectorCanvasProps) {
       }
       canvas.dataset.planetTransit = 'idle'
       canvas.dataset.orbitPlanet = activeOrbit?.id ?? ''
-      const commands = readFlightUpdate(command => input.isDown(command), input.readMouseFlight())
+      const mouse = input.readMouseFlight()
+      const commands = readFlightUpdate(command => input.isDown(command), { yaw: 0, pitch: 0, fire: mouse.fire })
       const bonuses = current.shipBonuses
       if (input.consumeTap('lights')) current.onToggleLights()
       overdriveClock = Math.max(0, overdriveClock - dt)
@@ -576,15 +637,15 @@ export function SectorCanvas(props: SectorCanvasProps) {
       const thrust = overdriving ? 1 : commands.thrust
       canvas.dataset.overdrive = overdriving ? 'active' : 'idle'
       const handling = 1 + (bonuses.handlingPercent ?? 0) / 100
-      ship.rotation.x = clamp(ship.rotation.x + commands.pitch * dt * 1.1 * handling, -1.25, 1.25)
-      ship.rotation.y += commands.yaw * dt * 1.25 * handling
+      const pitchChange = commands.pitch * dt * FLIGHT_STEERING.pitchRate + mouse.pitch
+      const yawChange = commands.yaw * dt * FLIGHT_STEERING.yawRate + mouse.yaw
+      ship.rotation.x = clamp(ship.rotation.x + pitchChange * handling, -FLIGHT_STEERING.pitchLimit, FLIGHT_STEERING.pitchLimit)
+      ship.rotation.y += yawChange * handling
       ship.rotation.z = integrateShipRoll(ship.rotation.z, commands.roll, dt, handling)
       ship.computeWorldMatrix(true)
       const forward = ship.getDirection(Vector3.Forward()).normalize()
       const right = ship.getDirection(Vector3.Right()).normalize()
       const previousPosition = ship.position.clone()
-      const nearest = findNearestPlanet(ship.position, planetSites)
-      const surfaceDistance = nearest ? distanceToPlanetSurface(ship.position, nearest) : Infinity
       const targetSpeed = getFlightTargetSpeed(thrust, bonuses) * (overdriving ? OVERDRIVE.speedMultiplier : 1)
       const motion = advanceFlightMotion(speed, targetSpeed, dt)
       speed = motion.speed
@@ -592,7 +653,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
       if (commands.dodgeRequested && dodgeRemaining <= 0) {
         dodgeRemaining = getDodgeCooldown(bonuses)
         dodgeElapsed = 0
-        moveSafely(ship.position.add(right.scale(commands.yaw < 0 ? -7 : 7)))
+        moveSafely(ship.position.add(right.scale(commands.yaw < 0 ? -FLIGHT_STEERING.dodgeStep : FLIGHT_STEERING.dodgeStep)))
       }
       const inside = clampGalaxyPosition(ship.position, bounds)
       const crossedBoundary = ship.position.x !== inside.x || ship.position.y !== inside.y || ship.position.z !== inside.z
@@ -604,9 +665,11 @@ export function SectorCanvas(props: SectorCanvasProps) {
       camera.position.addInPlace(displacement)
       const velocity = displacement.scaleInPlace(1 / Math.max(0.001, dt))
       const followDistance = 15 + Math.min(1, Math.abs(speed) / FLIGHT_SPEEDS.cruise) * 3.5
-      const chasePosition = ship.position.subtract(forward.scale(followDistance)).addInPlaceFromFloats(0, 6, 0)
+      const chasePosition = ship.position.subtract(forward.scale(followDistance)).addInPlaceFromFloats(0, CHASE_HEIGHT, 0)
       Vector3.LerpToRef(camera.position, chasePosition, Math.min(1, dt * 3.5), camera.position)
-      camera.setTarget(ship.position.add(forward.scale(9)))
+      forward.scaleToRef(PLAYER_WEAPON.sightConvergence, sight.convergence).addInPlace(ship.position)
+      focusCamera(sight.convergence)
+      sight.convergence.subtractToRef(camera.position, sight.direction).normalize()
       effects.update(dt, speed, thrust, overdriving)
       const engineSound = audio.updateEngine(speed / FLIGHT_SPEEDS.cruise, thrust)
       if (canvas.dataset.engineSound !== engineSound.mode) canvas.dataset.engineSound = engineSound.mode
@@ -618,27 +681,17 @@ export function SectorCanvas(props: SectorCanvasProps) {
         thermalTick = 0
         thermalDamage = 0
       }
-      burning.update(dt, solar.burningIntensity)
-      sun.update(dt)
+      if (recoverIfDestroyed()) return
+      burning.update(dt, flameIntensity())
+      sun.update(dt, ship.position)
       canvas.dataset.burningIntensity = solar.burningIntensity.toFixed(3)
-      worldCombat.update(dt, { position: ship.position, previousPosition, velocity, forward, right,
+      worldCombat.update(dt, { position: ship.position, previousPosition, velocity, forward, right, sight,
         firing: commands.fireRequested, bonuses, weaponRarity: current.equippedPartRarities.weapon ?? 'standard' })
+      if (recoverIfDestroyed()) return
       const status = worldCombat.getStatus()
       if (engaged !== status.engaged) { engaged = status.engaged; current.onCombatStateChange?.(engaged) }
-      if (hull <= 0) {
-        hull = maximumHull()
-        shield = 0
-        speed = 0
-        solar = createSolarExposureState()
-        thermalDamage = 0
-        thermalTick = 0
-        burning.update(0, 0)
-        ship.position.set(ORION_START_POSITION.x, ORION_START_POSITION.y, ORION_START_POSITION.z)
-        camera.position.copyFrom(ship.position).addInPlaceFromFloats(0, 6, -15)
-        showMessage('Holownik odprowadził statek do bezpiecznego punktu wejścia.', 'Recovery crew returned the ship to the safe entry point.')
-      }
       positionRef.current = shipPosition()
-      if (crossedBoundary && hull > 0 && !engaged && !activeOrbit && isGalaxyBoundary(ship.position, bounds)) {
+      if (crossedBoundary && hull > 0 && !current.progress.initialRepairRequired && !engaged && !activeOrbit && isGalaxyBoundary(ship.position, bounds)) {
         savePosition()
         setAtBoundary(true)
         current.onOpenGalaxyChart()
@@ -655,48 +708,56 @@ export function SectorCanvas(props: SectorCanvasProps) {
           current.onPlanetScan(site.id)
         }
       }
-      if (hudClock >= 0.12) {
+      if (hudClock >= HUD_UPDATE_SECONDS) {
         hudClock = 0
+        const now = performance.now()
         setIncomingDamage(previous => {
-          const next = previous.filter(item => performance.now() - item.createdAt < 1400)
+          const next = previous.filter(item => now - item.createdAt < DAMAGE_MARKER_MILLISECONDS)
           return next.length === previous.length ? previous : next
         })
         if (activeOrbit) setOrbitalFleet(worldCombat.getPlanetOrbitStatus(activeOrbit.id))
         canvas.dataset.flightSpeed = speed.toFixed(1)
         canvas.dataset.throttle = String(thrust)
-        setPosition({ ...positionRef.current })
+        const position = positionRef.current
+        setPosition(previous => previous.x === position.x && previous.y === position.y && previous.z === position.z ? previous : position)
+        const nearest = findNearestPlanet(ship.position, planetSites)
         setNearestPlanet(nearest)
-        setScanDistance(surfaceDistance)
+        setScanDistance(nearest ? distanceToPlanetSurface(ship.position, nearest) : Infinity)
         setInScanRange(findNearbyPlanet(ship.position, planetSites) !== null)
-        setAtBoundary(!activeOrbit && isGalaxyBoundary(ship.position, bounds))
+        setAtBoundary(!current.progress.initialRepairRequired && !activeOrbit && isGalaxyBoundary(ship.position, bounds))
         setStation(stations.getNearbyStation(ship.position))
         setVitals({ shield, hull, dodge: dodgeRemaining })
         current.onShipStatusChange?.({ shield, hull, speed, dodgeRemaining, burningIntensity: solar.burningIntensity })
         setCombat(status)
         setOverdriveRemaining(overdriveClock)
         const range = BASE_RADAR_RANGE * (1 + (bonuses.sensorRangePercent ?? 0) / 100)
-        setRadar(projectRadarContacts(ship.position, ship.rotation.y, range, [
+        setRadar(projectRadarContacts(ship.position, ship.rotation.y, ship.rotation.x, range, [
           ...worldCombat.getRadarTargets(ship.position, range),
-          ...stationSites.map(site => ({ ...site, kind: 'station' as const })),
-          { ...merchantSite, id: MERCHANT_COURSE_ID, kind: 'merchant' },
+          ...radarLandmarks,
         ]))
         setEnemyNameplates(projectEnemyNameplates(worldCombat.getNameplateTargets(), camera, planetSites, current.language))
         setSolarHeat({ intensity: solar.burningIntensity, distance: solar.distanceToSurface, inZone: solar.inZone })
         updateWaypoint()
       }
-      if (saveClock >= 0.8) {
+      if (saveClock >= FLIGHT_SAVE_SECONDS) {
         saveClock = 0
         savePosition()
       }
     })
+    const sunPosition = new Vector3(sunSite.x, sunSite.y, sunSite.z)
+    const pointStarlight = () => ship.position.subtractToRef(sunPosition, starlight.direction).normalize()
+    pointStarlight()
+    scene.onBeforeRenderObservable.add(pointStarlight)
     let ready = false
     scene.executeWhenReady(() => { ready = true; canvas.dataset.ready = 'true'; live.current.onReady?.() })
     engine.runRenderLoop(() => {
       if (live.current.renderActive !== false || !ready) scene.render()
     })
     return () => {
-      live.current.onShipStatusChange?.({ shield, hull, speed, dodgeRemaining, burningIntensity: solar.burningIntensity })
-      savePosition()
+      if (!recovering) {
+        live.current.onShipStatusChange?.({ shield, hull, speed, dodgeRemaining, burningIntensity: solar.burningIntensity })
+        savePosition()
+      }
       window.removeEventListener('resize', resize)
       window.removeEventListener('keydown', unlockAudio)
       window.removeEventListener('pointerdown', unlockAudio)
@@ -719,33 +780,37 @@ export function SectorCanvas(props: SectorCanvasProps) {
   }, [])
 
   const visited = nearestPlanet ? progress.visitedPlanets.includes(nearestPlanet.id) : false
-  const planetActions = nearestPlanet && scanDistance <= PLANET_CONTACT_RANGE && !combat.engaged ? <div className="planet-contact-actions">
-    {inScanRange && !visited && <button type="button" onClick={() => { pendingScan.current = nearestPlanet.id }}>{polish ? 'Zeskanuj' : 'Scan'}</button>}
-    {nearestPlanet.orbitalFaction && !orbitPlanet && <button type="button" onClick={() => { pendingOrbit.current = { id: nearestPlanet.id, leaving: false } }}>{polish ? 'Wejdź na orbitę' : 'Enter orbit'}</button>}
-  </div> : null
+  const maximum = getMaximumShipVitals(progress.shieldLevel, shipBonuses)
+  const planetActions = nearestPlanet && scanDistance <= PLANET_CONTACT_RANGE && !combat.engaged ? <>
+    {inScanRange && !visited && <button type="button" onClick={() => { pendingScan.current = nearestPlanet.id }}>{gameText(language).flight.scan}</button>}
+    {nearestPlanet.orbitalFaction && !orbitPlanet && <button type="button" onClick={() => { pendingOrbit.current = { id: nearestPlanet.id, leaving: false } }}>{gameText(language).flight.enterOrbit}</button>}
+  </> : null
   return (
     <main className="game-shell sector-shell world-sector" data-galaxy={world.galaxy.id} data-world-position={`${Math.round(position.x)},${Math.round(position.y)},${Math.round(position.z)}`}>
-      <canvas ref={canvasRef} className="game-canvas" aria-label="Neon Void explorable space sector"
+      <canvas ref={canvasRef} className="game-canvas" data-testid="flight-canvas" aria-label={gameText(language).flight.sectorView}
         data-equipped-parts={SHIP_PART_SLOTS.filter(slot => equippedPartRarities[slot]).join(',')} />
       {impactFlash > 0 && <div key={impactFlash} className="impact-flash" aria-hidden="true" />}
-        <ShipStatusHud language={language} shield={vitals.shield} maxShield={100 + progress.shieldLevel * 10 + shipBonuses.shieldPoints}
-          hull={vitals.hull} maxHull={100 + progress.shieldLevel * 5 + shipBonuses.hullPoints} dodgeRemaining={vitals.dodge}
+        <ShipStatusHud language={language} shield={vitals.shield} maxShield={maximum.shield}
+          hull={vitals.hull} maxHull={maximum.hull} dodgeRemaining={vitals.dodge}
           dodgeDuration={getDodgeCooldown(shipBonuses)} />
       {!docking.active && !planetTravel.active && !props.boundaryCourse && !props.paused && <>
         <div className="flight-reticle" aria-hidden="true" />
+        {props.repairStation && <aside className="world-repair-objective">
+          <strong>{gameText(language).flight.firstRepairTitle}</strong>
+          <p>{formatText(gameText(language).flight.firstRepairCourse, { station: props.repairStation.name[language] })}</p>
+        </aside>}
         <FlightRadar language={language} galaxy={world.galaxy.name} position={position} radius={radarRange} blips={radar}
-          lights={props.shipLights} lightsKey={controls.lights.replace(/^(Key|Digit)/, '')}
-          overdriveKey={progress.pilotSkills.includes('overdrive') ? controls.overdrive.replace(/^(Key|Digit)/, '') : undefined}
-          overdriveRemaining={overdriveRemaining} onLights={props.onToggleLights} onOverdrive={() => { pendingOverdrive.current = true }} />
+          hasOverdrive={progress.pilotSkills.includes('overdrive')}
+          overdriveRemaining={overdriveRemaining} onOverdrive={() => { pendingOverdrive.current = true }} />
       </>}
       {!docking.active && !planetTravel.active && !props.boundaryCourse && <>
-        <div className="enemy-nameplates" aria-label={polish ? 'Przeciwnicy w zasięgu wzroku' : 'Visible enemies'}>
+        <div className="enemy-nameplates" aria-label={gameText(language).flight.visibleEnemies}>
           {enemyNameplates.map(enemy => <div key={enemy.id} className={`enemy-nameplate${enemy.boss ? ' is-boss' : ''}${enemy.hit ? ' is-hit' : ''}`}
             style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }} data-enemy-id={enemy.id} data-enemy-level={enemy.level}>
             <div className="enemy-nameplate-title"><strong>{enemy.name}</strong><span>LVL {enemy.level}</span></div>
             <div className="enemy-nameplate-vitals">
-              <WorldBar label={`${polish ? 'Kadłub' : 'Hull'} · ${enemy.name}`} value={enemy.health} maximum={enemy.maxHealth} />
-              {enemy.maxShield > 0 && <WorldBar label={`${polish ? 'Osłona' : 'Shield'} · ${enemy.name}`} value={enemy.shield} maximum={enemy.maxShield} shield />}
+              <WorldBar label={`${gameText(language).flight.hull} · ${enemy.name}`} value={enemy.health} maximum={enemy.maxHealth} />
+              {enemy.maxShield > 0 && <WorldBar label={`${gameText(language).flight.shield} · ${enemy.name}`} value={enemy.shield} maximum={enemy.maxShield} shield />}
             </div>
           </div>)}
         </div>
@@ -758,76 +823,75 @@ export function SectorCanvas(props: SectorCanvasProps) {
           className={`world-hangar-beacon${beacon.selected ? ' is-selected' : ''}`}
           style={{ left: `${beacon.x}%`, top: `${beacon.y}%` }}
           data-station-id={beacon.id} data-behind={beacon.behind}
-          aria-label={`${polish ? 'Hangar' : 'Hangar'}: ${beacon.name}`}
-          title={`${beacon.name} · ${polish ? 'Śledź stację' : 'Track station'}`}
+          aria-label={`${gameText(language).flight.hangar}: ${beacon.name}`}
+          data-tooltip={`${beacon.name} · ${gameText(language).flight.trackStation}`}
+          disabled={progress.initialRepairRequired}
           onClick={() => props.onTrackStation?.(beacon.id)}>
           <span aria-hidden="true">{beacon.behind ? (beacon.x > 40 ? '↷' : '↶') : '⌂'}</span>
           <strong>{beacon.name}</strong><small>{formatDistance(beacon.distance)}</small>
         </button>)}
-        {merchantBeacon && <button type="button" className="world-merchant-beacon"
+        {merchantBeacon && !progress.initialRepairRequired && <button type="button" className="world-merchant-beacon"
           style={{ left: `${merchantBeacon.x}%`, top: `${merchantBeacon.y}%` }}
-          onClick={() => props.onTrackStation?.(MERCHANT_COURSE_ID)} aria-label={`${polish ? 'Kupiec' : 'Merchant'}: ${merchantBeacon.name}`}>
+          onClick={() => props.onTrackStation?.(MERCHANT_COURSE_ID)} aria-label={`${gameText(language).flight.merchant}: ${merchantBeacon.name}`}>
           <span aria-hidden="true">{merchantBeacon.behind ? (merchantBeacon.x > 40 ? '↷' : '↶') : '◇'}</span>
           <strong>{merchantBeacon.name}</strong><small>{formatDistance(merchantBeacon.distance)}</small>
         </button>}
         {(solarHeat.inZone || solarHeat.intensity > 0.01) && <aside className="world-heat-warning" role="status">
-          <strong>{polish ? 'ŻAR GWIAZDY · POŻAR' : 'STELLAR HEAT · BURNING'}</strong>
-          <span>{formatDistance(solarHeat.distance)} {polish ? 'od powierzchni słońca' : 'from the stellar surface'}</span>
-          <WorldBar label={polish ? 'Rozgrzanie statku' : 'Ship heat'} value={solarHeat.intensity * 100} maximum={100} />
+          <strong>{gameText(language).flight.stellarHeatBurning}</strong>
+          <span>{formatDistance(solarHeat.distance)} {gameText(language).flight.fromTheStellarSurface}</span>
+          <WorldBar label={gameText(language).flight.shipHeat} value={solarHeat.intensity * 100} maximum={100} />
         </aside>}
-        {combat.boss && <aside className="world-boss-vitals" aria-label={polish ? 'Stan bossa' : 'Boss status'}>
+        {combat.boss && <aside className="world-boss-vitals" aria-label={gameText(language).flight.bossStatus}>
           <strong>{combat.mission?.title[language]}</strong>
-          {combat.boss.charging && <span className="boss-volley-status">{polish ? 'Ładuje salwę' : 'Charging volley'}</span>}
-          <WorldBar label={polish ? 'Kadłub bossa' : 'Boss hull'} value={combat.boss.health} maximum={combat.boss.maximumHealth} />
-          {combat.boss.maximumShield > 0 && <WorldBar label={polish ? 'Osłona bossa' : 'Boss shield'} value={combat.boss.shield} maximum={combat.boss.maximumShield} shield />}
+          {combat.boss.charging && <span className="boss-volley-status">{gameText(language).flight.chargingVolley}</span>}
+          <WorldBar label={gameText(language).flight.bossHull} value={combat.boss.health} maximum={combat.boss.maximumHealth} />
+          {combat.boss.maximumShield > 0 && <WorldBar label={gameText(language).flight.bossShield} value={combat.boss.shield} maximum={combat.boss.maximumShield} shield />}
         </aside>}
         {combat.mission && !combat.boss && !orbitPlanet ? <aside className="world-encounter">
-          <span>{polish ? 'LOKALNY SYGNAŁ' : 'LOCAL SIGNAL'}</span><strong>{combat.mission.title[language]}</strong>
-          {combat.requiredObjectives > 0 && <small>{polish ? 'Postęp' : 'Progress'}: {combat.completedObjectives} / {combat.requiredObjectives}</small>}
-        </aside> : combat.engaged && !combat.boss && !orbitPlanet && combat.faction && combat.targetName ? <aside className="world-encounter world-fleet-contact" aria-label={polish ? 'Wrogi statek' : 'Hostile ship'}>
-          <span>{FACTIONS[combat.faction].name[language]}</span>
-          <strong>{shipArchetypeName(combat.targetName, language)}</strong>
-          <WorldBar label={polish ? 'Kadłub przeciwnika' : 'Hostile hull'} value={combat.targetHealth} maximum={combat.targetMaximumHealth} />
+          <span>{gameText(language).flight.localSignal}</span><strong>{combat.mission.title[language]}</strong>
+          {combat.requiredObjectives > 0 && <small>{gameText(language).flight.progress}: {combat.completedObjectives} / {combat.requiredObjectives}</small>}
         </aside> : null}
-        {station ? <aside className="world-station-contact" aria-label={polish ? 'Kontakt ze stacją' : 'Station contact'}>
+        {station ? <aside className="world-station-contact" aria-label={gameText(language).flight.stationContact}>
           <h2>{station.name[language]}</h2>
-          <button type="button" className="sector-scan-action" disabled={combat.engaged} onClick={() => { pendingDock.current = station.id }}>
-            {station.planetId ? (polish ? 'Wyląduj na planecie' : 'Land on planet') : (polish ? 'Wleć do stacji' : 'Enter station')}
-          </button>
-          {station.planetId === nearestPlanet?.id && planetActions}
+          <div className="planet-contact-actions">
+            <button type="button" className="dock-action" disabled={combat.engaged} onClick={() => { pendingDock.current = station.id }}>
+              {station.planetId ? gameText(language).flight.landOnPlanet : gameText(language).flight.enterStation}
+            </button>
+            {station.planetId && station.planetId === nearestPlanet?.id && planetActions}
+          </div>
         </aside> : nearestPlanet && scanDistance <= PLANET_CONTACT_RANGE && !combat.engaged && <aside className="world-station-contact world-planet-contact">
           <h2>{nearestPlanet.name[language]}</h2>
-          <small>{formatDistance(scanDistance)} {polish ? 'do powierzchni' : 'to surface'}</small>
-          {planetActions}
+          <small>{formatDistance(scanDistance)} {gameText(language).flight.toSurface}</small>
+          {planetActions && <div className="planet-contact-actions">{planetActions}</div>}
         </aside>}
-        {orbitPlanet && <aside className="world-orbit-contact" aria-label={polish ? 'Orbita planety' : 'Planet orbit'}>
+        {orbitPlanet && <aside className="world-orbit-contact" aria-label={gameText(language).flight.planetOrbit}>
           <strong>{orbitPlanet.name[language]}</strong>
           <small>{FACTIONS[orbitPlanet.orbitalFaction!].name[language]} · {orbitalFleet.remaining}/{orbitalFleet.total}</small>
-          <button type="button" onClick={() => { pendingOrbit.current = { id: orbitPlanet.id, leaving: true } }}>{polish ? 'Opuść orbitę' : 'Leave orbit'}</button>
+          <button type="button" onClick={() => { pendingOrbit.current = { id: orbitPlanet.id, leaving: true } }}>{gameText(language).flight.leaveOrbit}</button>
         </aside>}
         {!combat.engaged && !props.paused && (nearMerchant || atBoundary) && <div className="world-transit-actions">
           {nearMerchant && <button type="button" className="sector-scan-action" onClick={() => {
             if (distanceBetween(positionRef.current, world.merchant) <= world.merchant.tradeRange) props.onOpenMerchant()
-          }}>{polish ? 'Handluj z Arką Wymiany' : 'Trade with the Exchange Ark'}</button>}
+          }}>{gameText(language).flight.tradeWithTheExchangeArk}</button>}
           {atBoundary && <button type="button" className="sector-scan-action" onClick={props.onOpenGalaxyChart}>
-            {polish ? 'Otwórz mapę galaktyk' : 'Open galaxy chart'}
+            {gameText(language).flight.openGalaxyChart}
           </button>}
         </div>}
-        {message && <p className="world-message" role="status">{message}</p>}
+        {message && <p className="world-message" role="status">{message[language]}</p>}
       </>}
       {props.boundaryCourse && <aside className="world-docking-status">
-        <strong>{polish ? 'Lot do granicy galaktyki' : 'Flight to the galaxy boundary'}</strong>
-        <WorldBar label={polish ? 'Postęp lotu do granicy' : 'Boundary flight progress'} value={boundaryProgress} maximum={100} shield />
+        <strong>{gameText(language).flight.flightToTheGalaxyBoundary}</strong>
+        <WorldBar label={gameText(language).flight.boundaryFlightProgress} value={boundaryProgress} maximum={100} shield />
       </aside>}
       {planetTravel.active && <aside className="world-docking-status planet-transit-status">
-        <strong>{planetTravel.name}</strong><span>{planetTravel.leaving ? (polish ? 'Powrót w przestrzeń' : 'Returning to space') : (polish ? 'Podejście orbitalne' : 'Orbital approach')}</span>
-        <WorldBar label={polish ? 'Postęp lotu orbitalnego' : 'Orbital transit progress'} value={planetTravel.progress * 100} maximum={100} shield />
+        <strong>{planetTravel.name}</strong><span>{planetTravel.leaving ? (gameText(language).flight.returningToSpace) : (gameText(language).flight.orbitalApproach)}</span>
+        <WorldBar label={gameText(language).flight.orbitalTransitProgress} value={planetTravel.progress * 100} maximum={100} shield />
       </aside>}
       {docking.active && <>
         <div className="world-docking-shade" style={{ opacity: docking.fade }} aria-hidden="true" />
-        <aside className="world-docking-status"><span>{docking.stage === 'departure' ? (polish ? 'WYLOT' : 'DEPARTURE') : (polish ? 'DOKOWANIE' : 'DOCKING')}</span>
-          <strong>{docking.stage === 'departure' ? (polish ? 'Opuszczanie śluzy stacji' : 'Leaving station airlock') : docking.stage === 'waiting' ? (polish ? 'Przygotowanie hangaru' : 'Preparing hangar') : docking.stage === 'airlock' ? (polish ? 'Przelot przez śluzę' : 'Passing through airlock') : (polish ? 'Podejście do stacji' : 'Station approach')}</strong>
-          <WorldBar label={docking.stage === 'departure' ? (polish ? 'Postęp wylotu' : 'Departure progress') : (polish ? 'Postęp dokowania' : 'Docking progress')} value={docking.progress * 100} maximum={100} shield />
+        <aside className="world-docking-status"><span>{docking.stage === 'departure' ? (gameText(language).flight.departure) : (gameText(language).flight.docking)}</span>
+          <strong>{docking.stage === 'departure' ? (gameText(language).flight.leavingStationAirlock) : docking.stage === 'waiting' ? (gameText(language).flight.preparingHangar) : docking.stage === 'airlock' ? (gameText(language).flight.passingThroughAirlock) : (gameText(language).flight.stationApproach)}</strong>
+          <WorldBar label={docking.stage === 'departure' ? (gameText(language).flight.departureProgress) : (gameText(language).flight.dockingProgress)} value={docking.progress * 100} maximum={100} shield />
         </aside>
       </>}
     </main>
@@ -843,10 +907,3 @@ function WorldBar({ label, value, maximum, shield = false }: { label: string; va
 
 function clamp(value: number, minimum: number, maximum: number) { return Math.max(minimum, Math.min(maximum, value)) }
 function formatDistance(distance: number) { return distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.ceil(Math.max(0, distance))} m` }
-function shipArchetypeName(archetype: string, language: 'pl' | 'en') {
-  const labels: Record<string, { pl: string; en: string }> = {
-    scout: { pl: 'Zwiadowca', en: 'Scout' }, interceptor: { pl: 'Przechwytywacz', en: 'Interceptor' },
-    bomber: { pl: 'Bombowiec', en: 'Bomber' }, frigate: { pl: 'Fregata', en: 'Frigate' },
-  }
-  return labels[archetype]?.[language] ?? archetype
-}

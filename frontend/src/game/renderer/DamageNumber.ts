@@ -1,4 +1,4 @@
-import { DynamicTexture, Mesh, MeshBuilder, Scene, Vector3 } from '@babylonjs/core'
+import { DynamicTexture, Mesh, MeshBuilder, Scene, Vector3 } from './babylon'
 import { createSceneMaterial } from './sectorDepth'
 
 export const DAMAGE_NUMBER_LIFETIME_SECONDS = 1

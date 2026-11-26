@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
-import { getGalaxyWorld, ORION_PLANETS, ORION_SECTOR_BOUNDS, ORION_STATIONS, ORION_SUN } from '../src/game/domain/exploration'
+import { findNearestStation, getGalaxyWorld, ORION_PLANETS, ORION_SECTOR_BOUNDS, ORION_STATIONS, ORION_SUN } from '../src/game/domain/exploration'
 import { getMission } from '../src/game/missions/definitions'
 import { createEmptyMissionProgress, type MissionProgress } from '../src/game/progress/missionProgress'
 import { getMerchantStock, MERCHANT_MATERIALS } from '../src/game/progress/merchantTrade'
 
 const SAVE_KEY = 'neon-void:mission-progress:v1'
-const canvasLabel = 'Neon Void explorable space sector'
+const flightCanvasId = 'flight-canvas'
 
 async function loadWorld(page: Page, changes: Partial<MissionProgress> = {}) {
   await page.addInitScript(({ key, progress }) => {
@@ -13,22 +13,19 @@ async function loadWorld(page: Page, changes: Partial<MissionProgress> = {}) {
   }, { key: SAVE_KEY, progress: { ...createEmptyMissionProgress(), ...changes } })
   await page.goto('/')
   await page.getByRole('button', { name: 'Wczytaj grę' }).click()
-  await expect(page.getByLabel(canvasLabel)).toBeVisible({ timeout: 20000 })
+  await expect(page.getByTestId(flightCanvasId)).toBeVisible({ timeout: 20000 })
   await attachScene(page)
 }
 
 async function attachScene(page: Page) {
-  const source = await (await page.request.get('/src/game/renderer/SectorCanvas.tsx')).text()
-  const coreURL = source.match(/from "([^"]*@babylonjs_core\.js[^"]*)"/)?.[1]
-  if (!coreURL) throw new Error('Babylon module not found in Vite source')
-  await page.evaluate(async url => { (window as any).__core = await import(url) }, coreURL)
+  await page.evaluate(async url => { (window as any).__core = await import(url) }, '/src/game/renderer/babylon.ts')
   await page.waitForFunction(label => {
     const scenes = (window as any).__core.EngineStore.Instances.flatMap((engine: any) => engine.scenes)
-    const scene = scenes.find((entry: any) => entry.getEngine().getRenderingCanvas()?.getAttribute('aria-label') === label)
+    const scene = scenes.find((entry: any) => entry.getEngine().getRenderingCanvas()?.getAttribute('data-testid') === label)
     if (!scene?.isReady()) return false
     ;(window as any).__world = scene
     return true
-  }, canvasLabel)
+  }, flightCanvasId)
 }
 
 async function flightState(page: Page) {
@@ -45,8 +42,8 @@ async function flightState(page: Page) {
   })
 }
 
-test('new game starts in the galaxy with persistent vitals and rechargeable dodge', async ({ page }) => {
-  test.setTimeout(60000)
+test('new game launches at 30 HP with empty shields and requires a hangar repair', async ({ page }) => {
+  test.setTimeout(110000)
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'Wczytaj grę' })).toBeDisabled()
   await page.getByRole('button', { name: 'Nowa gra', exact: true }).click()
@@ -60,21 +57,58 @@ test('new game starts in the galaxy with persistent vitals and rechargeable dodg
   await page.getByRole('slider', { name: 'Napięcie' }).fill('62')
   await page.getByRole('slider', { name: 'Częstotliwość' }).fill('36')
   await page.getByRole('button', { name: 'Ustabilizuj reaktor' }).click()
+  await expect(page.getByRole('progressbar', { name: 'Synchronizacja reaktora…' })).toBeVisible()
   await page.getByRole('button', { name: 'Pokaż sekwencję' }).click()
-  await expect(page.locator('.recovery-ignition-readout')).toHaveText('2 · 4 · 1 · 3')
+  for (const number of [2, 4, 1, 3]) {
+    await expect(page.getByRole('button', { name: 'Styk ' + number, exact: true })).toHaveAttribute('data-pulse', 'true')
+  }
   await page.getByRole('button', { name: 'Styk 1', exact: true }).click()
   await expect(page.locator('.recovery-ignition-readout')).toContainText('Zła kolejność')
   for (const number of [2, 4, 1, 3]) await page.getByRole('button', { name: 'Styk ' + number, exact: true }).click()
   await launch.click()
-  await expect(page.getByLabel(canvasLabel)).toBeVisible({ timeout: 20000 })
-  await expect(page.getByRole('progressbar', { name: 'Osłony', exact: true })).toBeVisible()
-  await expect(page.getByRole('progressbar', { name: 'Kadłub', exact: true })).toBeVisible()
+  await expect(page.getByTestId(flightCanvasId)).toBeVisible({ timeout: 20000 })
+  const shield = page.getByRole('progressbar', { name: 'Osłony', exact: true })
+  const hull = page.getByRole('progressbar', { name: 'Kadłub', exact: true })
+  await expect(shield).toHaveAttribute('aria-valuenow', '0')
+  await expect(hull).toHaveAttribute('aria-valuenow', '30')
+  await attachScene(page)
+  await expect.poll(() => page.evaluate(() => (window as any).__world.getTransformNodeByName('playerShipAppearance').getChildMeshes()
+    .filter((mesh: any) => mesh.name.startsWith('hull-damage-') && mesh.isEnabled()).length)).toBe(2)
+  await expect(page.locator('.world-repair-objective')).toContainText('Szklany Księżyc')
   await expect(page.getByRole('progressbar', { name: 'Unik' })).toHaveAttribute('aria-valuenow', '100')
   await page.keyboard.press('k')
   await expect(page.getByRole('progressbar', { name: 'Unik' })).not.toHaveAttribute('aria-valuenow', '100')
   await expect(page.getByRole('progressbar', { name: 'Unik' })).toHaveAttribute('aria-valuenow', '100', { timeout: 10000 })
   await expect(page.locator('.pilot-loadout-hud, .pilot-resources-hud, .controls-hint')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /stacji|warsztat|misję/i })).toHaveCount(0)
+  await page.keyboard.press('l')
+  await expect(page.locator('.journal-boundary-action')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Śledź sygnał: Pierwszy kontakt' })).toBeDisabled()
+  await page.keyboard.press('l')
+  const dock = page.getByRole('button', { name: 'Wyląduj na planecie' })
+  await page.keyboard.down('Space')
+  try {
+    await expect(dock).toBeEnabled({ timeout: 24000 })
+  } finally {
+    await page.keyboard.up('Space')
+  }
+  const orbit = page.getByRole('button', { name: 'Wejdź na orbitę' })
+  const dockSize = (await dock.boundingBox())!
+  const orbitSize = (await orbit.boundingBox())!
+  expect(dockSize.width).toBeLessThanOrEqual(98)
+  expect(dockSize.width).toBeCloseTo(orbitSize.width)
+  expect(dockSize.height).toBeCloseTo(orbitSize.height)
+  await dock.click()
+  await expect(page.locator('canvas.garage-world')).toHaveAttribute('data-landing-state', 'landed', { timeout: 32000 })
+  const depart = page.getByRole('button', { name: 'Wyleć', exact: true })
+  await expect(depart).toBeDisabled()
+  await expect(hull).toHaveAttribute('aria-valuenow', '100', { timeout: 12000 })
+  await expect(shield).toHaveAttribute('aria-valuenow', '0')
+  await expect(depart).toBeEnabled()
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).initialRepairRequired, SAVE_KEY)).toBe(false)
+  await depart.click()
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-station-transit', 'idle', { timeout: 25000 })
+  await expect(page.locator('.world-repair-objective')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'PAUZA' }).getByRole('button', { name: 'Wyjdź' }).click()
   await expect(page.getByRole('heading', { name: 'NEON VOID' })).toBeVisible()
@@ -84,7 +118,10 @@ test('new game starts in the galaxy with persistent vitals and rechargeable dodg
 test('L opens the cosmic journal, tracks destinations and closes with L or X in the same live world', async ({ page }) => {
   await loadWorld(page, { sectorX: -5000, sectorY: -3000, sectorDistance: 2000 })
   const before = await flightState(page)
-  await expect(page.getByRole('button', { name: /Dziennik/ })).toHaveCount(0)
+  await expect(page.locator('.flight-menu-actions')).toHaveCount(0)
+  await page.locator('.world-hangar-beacon').hover()
+  await expect(page.getByRole('tooltip')).toContainText('Śledź stację')
+  await expect(page.locator('kbd')).toHaveCount(0)
   await page.keyboard.press('l')
   await expect(page.getByRole('heading', { name: 'Dziennik nawigacyjny' })).toBeVisible()
   await expect(page.locator('.journal-header kbd')).toHaveCount(0)
@@ -94,8 +131,10 @@ test('L opens the cosmic journal, tracks destinations and closes with L or X in 
   await expect(page.getByRole('button', { name: /Rozpocznij|warsztat/i })).toHaveCount(0)
   await page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Ostatni admirał' }) }).getByRole('button').click()
   await expect(page.locator('.journal-course-readout')).toContainText('Ostatni admirał')
+  await page.keyboard.press('i')
+  await expect(page.getByRole('dialog', { name: 'Ekwipunek pilota' })).toHaveCount(0)
   await page.keyboard.press('l')
-  await expect(page.getByLabel(canvasLabel)).toBeVisible()
+  await expect(page.getByTestId(flightCanvasId)).toBeVisible()
   await expect(page.locator('.world-waypoint')).toContainText('Ostatni admirał')
   expect(await flightState(page)).toMatchObject(before)
   await page.keyboard.press('l')
@@ -117,7 +156,7 @@ test('L opens the cosmic journal, tracks destinations and closes with L or X in 
   expect(box!.x + box!.width).toBeLessThanOrEqual(390)
   expect(box!.y).toBeGreaterThanOrEqual(0)
   await close.click()
-  await expect(page.getByLabel(canvasLabel)).toBeVisible()
+  await expect(page.getByTestId(flightCanvasId)).toBeVisible()
 })
 
 test('sector chart zooms at the pointer, pans and keeps the journal header fixed', async ({ page }) => {
@@ -167,7 +206,7 @@ test('reaching the boundary opens the jump chart and a hyperspace trip persists 
   await page.reload()
   await page.getByRole('button', { name: 'Wczytaj grę' }).click()
   await expect(page.locator('.world-sector')).toHaveAttribute('data-galaxy', 'vesper')
-  await expect(page.getByLabel(canvasLabel)).toHaveAttribute('data-ready', 'true', { timeout: 20000 })
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-ready', 'true', { timeout: 20000 })
   await page.keyboard.press('l')
   await page.getByRole('button', { name: 'Kurs do granicy galaktyki' }).click()
   await expect(page.getByRole('progressbar', { name: 'Postęp lotu do granicy' })).toBeVisible()
@@ -236,6 +275,30 @@ test('pause settings close and retain the live world', async ({ page }) => {
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Wznów' }).click()
   expect((await flightState(page)).sceneId).toBe(before.sceneId)
+})
+
+test('language changes only in settings and is restored after reload', async ({ page }) => {
+  await loadWorld(page)
+  const before = await flightState(page)
+  await expect(page.locator('select[name="language"]')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('select[name="language"]')).toHaveCount(0)
+  await page.getByRole('dialog', { name: 'PAUZA' }).getByRole('button', { name: 'Ustawienia' }).click()
+  await page.getByRole('combobox', { name: 'Język' }).selectOption('en')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page.getByRole('dialog', { name: 'FLIGHT SETTINGS' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await expect(page.getByLabel('Tactical radar')).toBeVisible()
+  expect((await flightState(page)).sceneId).toBe(before.sceneId)
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Load game' })).toBeEnabled()
+  await expect(page.locator('select[name="language"]')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('pl')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'pl')
+  await expect(page.getByRole('heading', { name: 'Ustawienia', exact: true })).toBeVisible()
 })
 
 test('local docking preloads the hangar, lands and launches at the same station', async ({ page }) => {
@@ -308,15 +371,15 @@ test('local docking preloads the hangar, lands and launches at the same station'
   })
   for (const height of feet) expect(Math.abs(height)).toBeLessThan(0.001)
   await expect(page.locator('.garage-toolbar')).toContainText(station.name.pl)
-  await page.locator('.hangar-crew-panel summary').click()
-  await page.getByRole('button', { name: 'Sera Tal' }).click()
-  await expect(page.locator('.hangar-crew-line')).toContainText('kartografka')
-  await page.getByRole('button', { name: 'K-7' }).click()
-  await expect(page.locator('.hangar-crew-line')).toContainText('robot techniczny')
-  await page.locator('.hangar-crew-panel summary').click()
+  await expect(page.getByText(/Załoga hangaru|Materiały w ładowni|Części w magazynie|Elementy statku|PPM/)).toHaveCount(0)
+  expect(await page.evaluate(() => {
+    const scene = (window as any).__core.EngineStore.Instances.flatMap((engine: any) => engine.scenes)
+      .find((entry: any) => entry.getTransformNodeByName('hangarPlayerShip'))
+    return ['hangarCrew-sera-tal', 'hangarCrew-k-7'].every(name => scene.getTransformNodeByName(name)?.isEnabled())
+  })).toBe(true)
   await page.keyboard.press('l')
   await expect(page.getByRole('heading', { name: 'Dziennik nawigacyjny' })).toBeVisible()
-  await expect(page.getByLabel(canvasLabel)).toHaveCount(0)
+  await expect(page.getByTestId(flightCanvasId)).toHaveCount(0)
   await page.keyboard.press('l')
   await expect(hangar).toBeVisible()
   await expect.poll(async () => Number(await page.getByRole('progressbar', { name: 'Kadłub', exact: true }).getAttribute('aria-valuenow'))).toBeGreaterThan(45)
@@ -336,11 +399,11 @@ test('local docking preloads the hangar, lands and launches at the same station'
   await expect(hangar).toHaveAttribute('data-landing-state', 'departing')
   await expect(hangar).toHaveAttribute('data-gear-deployment', '0.000')
   await expect(page.locator('.garage-toolbar')).toHaveCount(0)
-  await expect(page.getByLabel(canvasLabel)).toBeVisible({ timeout: 20000 })
+  await expect(page.getByTestId(flightCanvasId)).toBeVisible({ timeout: 20000 })
   await attachScene(page)
   await expect(page.getByRole('progressbar', { name: 'Postęp wylotu' })).toBeVisible()
   expect(await page.evaluate(() => (window as any).__world.getMeshByName('flightSpeedStreaks').isEnabled())).toBe(false)
-  await expect(page.getByLabel(canvasLabel)).toHaveAttribute('data-station-transit', 'idle', { timeout: 15000 })
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-station-transit', 'idle', { timeout: 15000 })
   expect((await flightState(page)).position.z).toBeCloseTo(station.launchPosition.z - 140, 0)
   expect(await page.evaluate(() => {
     const { Vector3 } = (window as any).__core
@@ -348,6 +411,58 @@ test('local docking preloads the hangar, lands and launches at the same station'
     return { forwardZ: ship.getDirection(Vector3.Forward()).z, quaternion: ship.rotationQuaternion }
   })).toMatchObject({ forwardZ: -1, quaternion: null })
   await expect(page.getByRole('progressbar', { name: 'Osłony', exact: true })).toHaveAttribute('aria-valuenow', '100')
+})
+
+test('destroyed ships recover in the nearest hangar and K-7 repairs the hull', async ({ page }) => {
+  test.setTimeout(70000)
+  await page.addInitScript(key => {
+    const write = Storage.prototype.setItem
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key) {
+        const saved = JSON.parse(value)
+        if (saved.recoveryStationId) (window as any).__firstRecovery ??= saved
+      }
+      return write.call(this, name, value)
+    }
+  }, SAVE_KEY)
+  const world = getGalaxyWorld('vesper', 0)
+  const planet = world.planets[0]
+  const position = { x: planet.x, y: planet.y, z: planet.z - planet.radius - 24 }
+  const closest = findNearestStation(position, world.stations)
+  await loadWorld(page, { sectorId: 'vesper', sectorX: position.x, sectorY: position.y, sectorDistance: position.z,
+    shipVitals: { hull: 4, shield: 0 }, credits: 80 })
+  await page.keyboard.down('Space')
+  try {
+    await expect(page.locator('.garage-toolbar')).toContainText(closest.name.pl, { timeout: 15000 })
+  } finally {
+    await page.keyboard.up('Space')
+  }
+  expect(await page.evaluate(() => (window as any).__firstRecovery)).toMatchObject({
+    sectorId: 'vesper', recoveryStationId: closest.id, shipVitals: { hull: 10, shield: 0 }, credits: 80,
+    sectorX: closest.launchPosition.x, sectorY: closest.launchPosition.y, sectorDistance: closest.launchPosition.z,
+  })
+  const hangar = page.locator('canvas.garage-world')
+  await expect(hangar).toHaveAttribute('data-landing-state', 'landed')
+  await expect(hangar).toHaveAttribute('data-repair-drone', 'working')
+  const repairVisuals = () => page.evaluate(() => {
+    const engine = (window as any).__core.EngineStore.Instances.find((entry: any) => entry.getRenderingCanvas()?.matches('canvas.garage-world'))
+    const scene = engine?.scenes[0]
+    return { arc: scene?.getMeshByName('hangarRepairArc')?.isEnabled(), wingInset: scene?.getMeshByName('shipWingInset1')?.isEnabled() }
+  })
+  await expect.poll(repairVisuals).toEqual({ arc: true, wingInset: false })
+  const snapshot = () => page.evaluate(key => JSON.parse(localStorage.getItem(key)!) as MissionProgress, SAVE_KEY)
+  await expect.poll(async () => (await snapshot()).shipVitals!.hull).toBeGreaterThan(10)
+  const hullBeforeReload = (await snapshot()).shipVitals!.hull
+  await page.reload()
+  await page.getByRole('button', { name: 'Wczytaj grę' }).click()
+  await expect(page.locator('.garage-toolbar')).toContainText(closest.name.pl)
+  await expect(hangar).toHaveAttribute('data-landing-state', 'landed')
+  await expect.poll(async () => (await snapshot()).shipVitals!.hull).toBeGreaterThanOrEqual(hullBeforeReload)
+  await expect(hangar).toHaveAttribute('data-repair-drone', 'idle', { timeout: 15000 })
+  expect((await snapshot()).shipVitals).toEqual({ hull: 100, shield: 0 })
+  await page.getByRole('button', { name: 'Wyleć', exact: true }).click()
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-station-transit', 'idle', { timeout: 20000 })
+  expect((await snapshot()).recoveryStationId).toBeNull()
 })
 
 test('inventory artwork and equipment update the ship without replacing the world', async ({ page }) => {
@@ -368,7 +483,7 @@ test('inventory artwork and equipment update the ship without replacing the worl
   await expect(inventory.locator('.pilot-materials svg')).toHaveCount(4)
   await inventory.locator('.pilot-item.rarity-refined').getByRole('button', { name: 'Załóż', exact: true }).click()
   await page.getByRole('button', { name: 'Zamknij ekwipunek' }).click()
-  await expect(page.getByLabel(canvasLabel)).toHaveAttribute('data-equipped-parts', 'weapon')
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-equipped-parts', 'weapon')
   expect((await flightState(page)).sceneId).toBe(before.sceneId)
   await expect.poll(() => page.evaluate(() => (window as any).__world.getTransformNodeByName('playerShipAppearance').getChildMeshes().find((mesh: any) => mesh.name === 'shipWeaponArmor-1')?.material?.diffuseColor?.toHexString().toLowerCase())).toBe('#62a8ff')
 })
@@ -380,7 +495,7 @@ test('streaks stop while coasting and bullets overtake the boosting ship', async
   await page.keyboard.down('ShiftLeft')
   await expect.poll(async () => (await flightState(page)).streaks, { timeout: 15000 }).toBe(true)
   await expect.poll(async () => (await flightState(page)).exhaustRate).toBeGreaterThan(0)
-  await expect.poll(async () => Number(await page.getByLabel(canvasLabel).getAttribute('data-flight-speed'))).toBeGreaterThan(140)
+  await expect.poll(async () => Number(await page.getByTestId(flightCanvasId).getAttribute('data-flight-speed'))).toBeGreaterThan(140)
   const chaseDistance = await page.evaluate(() => {
     const scene = (window as any).__world
     return scene.activeCamera.position.subtract(scene.getTransformNodeByName('playerShip').position).length()
@@ -439,6 +554,12 @@ test('remote boss is accessible before earlier missions and rewards victory once
   const bossNameplate = page.locator('.enemy-nameplate[data-enemy-id="world-boss-null-choir"]')
   await expect(bossNameplate).toContainText('Pusty Chór')
   await expect(bossNameplate).toContainText(/LVL \d+/)
+  await expect.poll(() => page.evaluate(() => {
+    const scene = (window as any).__world
+    const boss = scene.getTransformNodeByName('world-boss-null-choir')
+    const outline = scene.getSelectionOutlineLayerByName('flightTargetOutline')
+    return outline?.isLayerReady() && boss.getChildMeshes(true).some((mesh: any) => outline.hasMesh(mesh))
+  })).toBe(true)
   await expect(page.locator('.damage-direction-feedback')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('.damage-source-label')).toContainText(mission.title.pl, { timeout: 15000 })
   const sizes = await page.evaluate(() => {
@@ -514,14 +635,20 @@ test('scanner modules, pilot skills and flight lights change the live ship', asy
     shipParts: [{ id: 'radar-array', slot: 'scanner', rarity: 'standard',
       stats: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0, sensorRangePercent: 35 } }],
   })
-  const canvas = page.getByLabel(canvasLabel)
+  const canvas = page.getByTestId(flightCanvasId)
   const radar = page.getByLabel('Radar taktyczny')
   await expect(radar).toContainText('Przód czysty')
   await expect(canvas).toHaveAttribute('data-headlights', 'off')
   await page.keyboard.press('h')
   await expect(canvas).toHaveAttribute('data-headlights', 'on')
-  expect(await page.evaluate(() => (window as any).__world.getLightByName('pilotSearchlight').isEnabled())).toBe(true)
-  await radar.getByRole('button', { name: /Światła/ }).click()
+  expect(await page.evaluate(() => {
+    const scene = (window as any).__world
+    const lamp = scene.getLightByName('pilotSearchlight')
+    const shaft = scene.getMeshByName('pilotSearchlightShaft')
+    return { enabled: lamp.isEnabled(), range: lamp.range, shaftEnabled: shaft.isEnabled() }
+  })).toEqual({ enabled: true, range: 520, shaftEnabled: true })
+  await expect(radar.getByRole('button', { name: 'Reflektory statku' })).toHaveCount(0)
+  await page.keyboard.press('h')
   await expect(canvas).toHaveAttribute('data-headlights', 'off')
   await page.keyboard.press('i')
   const inventory = page.getByRole('dialog', { name: 'Ekwipunek pilota' })
@@ -580,7 +707,7 @@ test('engine sound changes between thrust, coasting and stopping on the real aud
     }
   })
   await loadWorld(page, { sectorX: -6000, sectorY: -3000, sectorDistance: 2000 })
-  const canvas = page.getByLabel(canvasLabel)
+  const canvas = page.getByTestId(flightCanvasId)
   await expect(canvas).toHaveAttribute('data-engine-sound', 'silent')
   await page.keyboard.down('ShiftLeft')
   await expect(canvas).toHaveAttribute('data-engine-sound', 'acceleration')
@@ -630,7 +757,7 @@ test('C shows current ship statistics and an equipped 3D model while preserving 
   await expect(sheet.getByText('Obrażenia pocisku', { exact: true }).locator('..').locator('dd')).toHaveText('33–45')
   await expect(sheet.locator('.resistance-thermal dd')).toHaveText('16%')
   await expect(sheet.locator('.ship-stats-module')).toHaveCount(6)
-  const preview = sheet.getByLabel('Ship statistics 3D preview')
+  const preview = sheet.getByLabel('Podgląd statku 3D')
   await expect(preview).toHaveAttribute('data-equipped-parts', 'weapon,shield,engine')
   await expect(preview).toHaveAttribute('data-ready', 'true', { timeout: 25000 })
   const equipped = await page.evaluate(() => {
@@ -672,9 +799,48 @@ test('local planet scans persist', async ({ page }) => {
 
 test('Shift provides half thrust, Space provides full thrust and mouse fires independently', async ({ page }) => {
   test.setTimeout(45000)
+  await page.addInitScript(() => {
+    const original = AudioContext.prototype.createBufferSource
+    AudioContext.prototype.createBufferSource = function () {
+      const source = original.call(this)
+      const start = source.start.bind(source)
+      source.start = (...args) => {
+        if (source.buffer) (window as any).__shotDuration = source.buffer.duration
+        return start(...args)
+      }
+      return source
+    }
+  })
   await loadWorld(page, { sectorX: -6000, sectorY: -3000, sectorDistance: 2000 })
-  const canvas = page.getByLabel(canvasLabel)
-  await expect(page.locator('.world-hangar-beacon')).toHaveCount(1)
+  const canvas = page.getByTestId(flightCanvasId)
+  const heading = () => page.evaluate(() => (window as any).__world.getTransformNodeByName('playerShip').rotation.y)
+  const before = await heading()
+  const center = (await canvas.boundingBox())!
+  const middleX = center.x + center.width / 2
+  const middleY = center.y + center.height / 2
+  await page.mouse.move(middleX + 80, middleY)
+  await page.mouse.move(middleX, middleY)
+  expect(await heading()).toBeCloseTo(before)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(middleX + 80, middleY, { steps: 6 })
+  await expect.poll(heading).toBeGreaterThan(before + .15)
+  await page.mouse.move(middleX, middleY, { steps: 6 })
+  await page.mouse.up({ button: 'right' })
+  await expect.poll(heading).toBeCloseTo(before)
+  const beacon = page.locator('.world-hangar-beacon')
+  await expect(beacon).toHaveCount(1)
+  expect(await beacon.evaluate(node => node.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))).toBe(false)
+  const marker = (await beacon.boundingBox())!
+  const markerX = marker.x + marker.width / 2
+  const markerY = marker.y + marker.height / 2
+  await page.mouse.move(markerX, markerY)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(markerX + 80, markerY, { steps: 5 })
+  await expect.poll(heading).toBeGreaterThan(before + .15)
+  await page.mouse.move(markerX, markerY, { steps: 5 })
+  await page.mouse.up({ button: 'right' })
+  await expect.poll(heading).toBeCloseTo(before)
+  await page.mouse.move(middleX, middleY)
   await page.keyboard.down('ShiftLeft')
   await expect(canvas).toHaveAttribute('data-throttle', '0.5')
   await expect.poll(async () => Number(await canvas.getAttribute('data-flight-speed'))).toBeGreaterThan(140)
@@ -684,16 +850,17 @@ test('Shift provides half thrust, Space provides full thrust and mouse fires ind
   await expect(canvas).toHaveAttribute('data-throttle', '1')
   await expect.poll(async () => Number(await canvas.getAttribute('data-flight-speed'))).toBeGreaterThan(285)
   expect(await page.evaluate(() => (window as any).__world.meshes.filter((mesh: any) => mesh.name === 'worldPlayerBolt' && mesh.isEnabled()).length)).toBe(0)
-  await canvas.dispatchEvent('pointerdown', { button: 0 })
+  await page.mouse.down()
   await expect.poll(() => page.evaluate(() => (window as any).__world.meshes.filter((mesh: any) => mesh.name === 'worldPlayerBolt' && mesh.isEnabled()).length)).toBeGreaterThan(0)
-  await canvas.dispatchEvent('pointerup', { button: 0 })
+  await expect.poll(() => page.evaluate(() => (window as any).__shotDuration)).toBeCloseTo(.24)
+  await page.mouse.up()
   await page.keyboard.up('Space')
 })
 
 test('held Space keeps a stable cruise near stations, enemies and planetary surfaces', async ({ page }) => {
   test.setTimeout(45000)
   await loadWorld(page, { sectorX: -6000, sectorY: -3000, sectorDistance: 2000 })
-  const canvas = page.getByLabel(canvasLabel)
+  const canvas = page.getByTestId(flightCanvasId)
   await page.keyboard.down('Space')
   await expect.poll(async () => Number(await canvas.getAttribute('data-flight-speed'))).toBeGreaterThan(292)
   const planet = ORION_PLANETS[0]
@@ -800,7 +967,7 @@ test('ambient audio continues through the journal and hangar and respects music 
   await expect(page.locator('canvas.garage-world')).toHaveAttribute('data-landing-state', 'landed', { timeout: 30000 })
   await expect.poll(signal).toBeGreaterThan(0.0001)
   await page.getByRole('button', { name: /Opuść hangar|Wyjdź z hangaru/ }).first().click()
-  await expect(page.getByLabel(canvasLabel)).toHaveAttribute('data-station-transit', 'idle', { timeout: 20000 })
+  await expect(page.getByTestId(flightCanvasId)).toHaveAttribute('data-station-transit', 'idle', { timeout: 20000 })
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'PAUZA' }).getByRole('button', { name: 'Wyjdź' }).click()
   await page.getByRole('button', { name: 'Ustawienia', exact: true }).click()
@@ -816,7 +983,7 @@ test('solar heat burns the ship, respects resistance and stops after escaping', 
     shipParts: [{ id: 'heat-engine', slot: 'engine', rarity: 'standard', stats: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }, resistances: { thermal: 0.5 } }],
     equippedParts: { weapon: null, shield: null, engine: 'heat-engine' },
   })
-  const canvas = page.getByLabel(canvasLabel)
+  const canvas = page.getByTestId(flightCanvasId)
   await expect(page.locator('.world-heat-warning')).toContainText('ŻAR GWIAZDY')
   await expect.poll(async () => Number(await canvas.getAttribute('data-burning-intensity'))).toBeGreaterThan(0.3)
   await expect.poll(async () => Number(await page.getByRole('progressbar', { name: 'Osłony', exact: true }).getAttribute('aria-valuenow'))).toBeLessThan(99)

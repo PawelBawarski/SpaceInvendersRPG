@@ -9,28 +9,6 @@
   min-width: 0;
 }
 
-.garage-interface .garage-slot {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-}
-
-.garage-slot .part-artwork { width: 46px; height: 38px; }
-.garage-slot > .garage-slot-copy { display: grid; min-width: 0; gap: 4px; }
-.garage-slot > .garage-slot-copy > strong { min-width: 0; }
-.garage-slot .garage-part-action { font-size: 11px; padding: 0 6px; }
-
-.garage-interface .garage-materials p {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-  min-height: 46px;
-}
-
-.garage-materials .material-artwork,
-.garage-pilot-icon { width: 26px; height: 26px; }
-.garage-materials p > span { min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
-
 .garage-interface .garage-part {
   display: grid;
   grid-template-columns: 50px minmax(0, 1fr);
@@ -47,7 +25,3 @@
 .garage-part .garage-part-info { display: grid; min-width: 0; gap: 5px; }
 .garage-part .garage-part-info small { overflow-wrap: anywhere; }
 .garage-part .garage-part-actions { grid-column: 2; justify-content: flex-start; min-width: 0; }
-
-@media (max-width: 760px) {
-  .garage-interface .garage-materials { grid-template-columns: minmax(0, 1fr); }
-}

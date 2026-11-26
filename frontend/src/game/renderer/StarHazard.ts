@@ -1,7 +1,7 @@
 import {
   Color3, Color4, Constants, DynamicTexture, GlowLayer, Mesh, MeshBuilder, ParticleSystem,
   PointLight, Scene, TransformNode, Vector3,
-} from '@babylonjs/core'
+} from './babylon'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import type { SolarHeatSource } from '../simulation/SolarExposure'
 import { createSceneMaterial, usesSectorDepth } from './sectorDepth'
@@ -48,10 +48,10 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
   const coronaTexture = new DynamicTexture('orionSunCoronaTexture', { width: 256, height: 256 }, scene, false)
   const coronaContext = coronaTexture.getContext()
   const coronaGradient = coronaContext.createRadialGradient(128, 128, 0, 128, 128, 126)
-  coronaGradient.addColorStop(0, haloColor(.45))
-  coronaGradient.addColorStop(0.27, haloColor(.30))
-  coronaGradient.addColorStop(0.39, haloColor(.13))
-  coronaGradient.addColorStop(0.7, haloColor(.035))
+  coronaGradient.addColorStop(0, haloColor(.36))
+  coronaGradient.addColorStop(0.27, haloColor(.24))
+  coronaGradient.addColorStop(0.39, haloColor(.09))
+  coronaGradient.addColorStop(0.7, haloColor(.023))
   coronaGradient.addColorStop(1, haloColor(0))
   coronaContext.fillStyle = coronaGradient
   coronaContext.fillRect(0, 0, 256, 256)
@@ -82,13 +82,17 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
   heatLight.diffuse = tint.scale(.95)
   heatLight.intensity = 1.8
   heatLight.range = star.radius + star.heatRange
+  heatLight.renderPriority = 3
+  heatLight.setEnabled(false)
   let elapsed = 0
   return {
     root,
-    update(dt: number) {
+    update(dt: number, pilotPosition: Vector3) {
       elapsed += Math.max(0, dt)
       sphere.rotation.y += Math.max(0, dt) * 0.012
       corona.visibility = 0.93 + Math.sin(elapsed * 0.45) * 0.05
+      const nearby = Vector3.DistanceSquared(pilotPosition, root.position) < heatLight.range ** 2
+      if (nearby !== heatLight.isEnabled()) heatLight.setEnabled(nearby)
     },
     dispose() {
       root.dispose(false, false)

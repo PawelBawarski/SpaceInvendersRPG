@@ -1,4 +1,5 @@
-import { Camera, Matrix, Vector3 } from '@babylonjs/core'
+import { type GameLanguage } from '../i18n'
+import { Camera, Matrix, Vector3 } from './babylon'
 import type { EnemyNameplateTarget } from './WorldCombat'
 import type { PlanetSite } from '../domain/exploration'
 import { segmentBoundsOverlapSphere } from './collisionBroadphase'
@@ -10,7 +11,7 @@ export interface EnemyNameplate {
 }
 
 /** Called at HUD frequency; labels reuse the DOM and allocate no GPU textures or meshes. */
-export function projectEnemyNameplates(targets: readonly EnemyNameplateTarget[], camera: Camera, planets: readonly PlanetSite[], language: 'pl' | 'en'): EnemyNameplate[] {
+export function projectEnemyNameplates(targets: readonly EnemyNameplateTarget[], camera: Camera, planets: readonly PlanetSite[], language: GameLanguage): EnemyNameplate[] {
   const engine = camera.getEngine()
   const width = engine.getRenderWidth()
   const height = engine.getRenderHeight()
@@ -26,7 +27,7 @@ export function projectEnemyNameplates(targets: readonly EnemyNameplateTarget[],
   for (const target of visible) {
     Vector3.ProjectToRef(target.position, Matrix.IdentityReadOnly, transform, viewport, bodyScreen)
     if (bodyScreen.z < 0 || bodyScreen.z > 1 || bodyScreen.x < 0 || bodyScreen.x > width || bodyScreen.y < 0 || bodyScreen.y > height) continue
-    above.copyFrom(up).scaleInPlace(target.hitRadius * 1.25 + 2).addInPlace(target.position)
+    above.copyFrom(up).scaleInPlace(target.hitRadius * (target.boss ? .70 : 1.25) + 2).addInPlace(target.position)
     Vector3.ProjectToRef(above, Matrix.IdentityReadOnly, transform, viewport, projected)
     projected.x = Math.max(80, Math.min(width - 80, projected.x))
     projected.y = Math.max(36, Math.min(height - 20, projected.y))

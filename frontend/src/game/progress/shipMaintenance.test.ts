@@ -21,6 +21,16 @@ describe('hangar maintenance and persistent ship vitals', () => {
     expect(regenerateHangarHull(progress, NaN)).toBe(progress)
   })
 
+  it('clears the initial repair objective only once the hull has fully recovered', () => {
+    const start = { ...createEmptyMissionProgress(), initialRepairRequired: true, shipVitals: { hull: 30, shield: 0 } }
+    const partial = regenerateHangarHull(start, 6)
+    expect(partial).toMatchObject({ initialRepairRequired: true, shipVitals: { hull: 90, shield: 0 } })
+    const repaired = regenerateHangarHull(partial, 1)
+    expect(repaired).toMatchObject({ initialRepairRequired: false, shipVitals: { hull: 100, shield: 0 }, credits: 0 })
+    saveMissionProgress(repaired)
+    expect(loadMissionProgress()).toMatchObject({ initialRepairRequired: false, shipVitals: { hull: 100, shield: 0 } })
+  })
+
   it('charges the displayed price exactly once and never repairs hull when paying for shields', () => {
     const damaged = { ...createEmptyMissionProgress(), credits: 100, shipVitals: { hull: 40, shield: 20 } }
     expect(getShieldRechargeCost(damaged)).toBe(40)

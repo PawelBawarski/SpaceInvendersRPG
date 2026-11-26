@@ -1,31 +1,42 @@
+import { formatText, localizedText, type LocalizedText } from '../i18n'
 import type { FactionId, ShipArchetype } from './worldFactions'
 
-type LocalizedName = { pl: string; en: string }
+type LocalizedName = LocalizedText
 
 const CLASSES: Record<ShipArchetype, LocalizedName> = {
-  scout: { pl: 'Zwiadowca', en: 'Scout' },
-  interceptor: { pl: 'Przechwytywacz', en: 'Interceptor' },
-  bomber: { pl: 'Bombowiec', en: 'Bomber' },
-  frigate: { pl: 'Fregata', en: 'Frigate' },
+  scout: localizedText(text => text.enemy.scout),
+  interceptor: localizedText(text => text.enemy.interceptor),
+  bomber: localizedText(text => text.enemy.bomber),
+  frigate: localizedText(text => text.enemy.frigate),
 }
 const CULTURES: Record<FactionId, LocalizedName> = {
-  meridian: { pl: 'Meridian', en: 'Meridian' }, nacre: { pl: 'Nacre', en: 'Nacre' },
-  'null-cult': { pl: 'Pustego Chóru', en: 'of the Null Choir' }, 'ashen-legion': { pl: 'Popiołu', en: 'of Ash' },
+  meridian: localizedText(text => text.enemy.meridian), nacre: localizedText(text => text.enemy.nacre),
+  'null-cult': localizedText(text => text.enemy.nullCult), 'ashen-legion': localizedText(text => text.enemy.ashenLegion),
 }
 const BOSSES: Record<string, LocalizedName> = {
-  warden: { pl: 'Strażnik Meridian', en: 'Meridian Warden' },
-  'signal-source': { pl: 'Herold Echa', en: 'Echo Herald' },
-  'null-choir': { pl: 'Pusty Chór', en: 'Null Choir' },
-  'ashen-carrier': { pl: 'Nosiciel Popiołu', en: 'Ashen Carrier' },
-  'meridian-warlord': { pl: 'Ostatni Admirał', en: 'Last Admiral' },
+  warden: localizedText(text => text.enemy.warden),
+  'signal-source': localizedText(text => text.enemy.signalSource),
+  'null-choir': localizedText(text => text.enemy.nullChoir),
+  'ashen-carrier': localizedText(text => text.enemy.ashenCarrier),
+  'meridian-warlord': localizedText(text => text.enemy.meridianWarlord),
+}
+const shipNames = new Map<string, LocalizedName>()
+
+function getShipName(faction: FactionId, archetype: ShipArchetype): LocalizedName {
+  const key = faction + '/' + archetype
+  const existing = shipNames.get(key)
+  if (existing) return existing
+  const name = localizedText((text, language) => formatText(text.enemy.namePatterns[faction], {
+    className: CLASSES[archetype][language], factionName: CULTURES[faction][language],
+  }))
+  shipNames.set(key, name)
+  return name
 }
 
 /** A stable threat level derived from the enemy's actual durability and weapon strength. */
 export function getEnemyIdentity(faction: FactionId, archetype: ShipArchetype, health: number, shield: number, damage: number, bossId?: string) {
-  const type = CLASSES[archetype]
-  const culture = CULTURES[faction]
   return {
-    name: (bossId && BOSSES[bossId]) || { pl: `${type.pl} ${culture.pl}`, en: culture.en.startsWith('of ') ? `${type.en} ${culture.en}` : `${culture.en} ${type.en}` },
+    name: (bossId && BOSSES[bossId]) || getShipName(faction, archetype),
     level: Math.max(1, Math.ceil((health + shield * 0.6) / 60 + damage * 0.25)),
     boss: bossId !== undefined,
   }

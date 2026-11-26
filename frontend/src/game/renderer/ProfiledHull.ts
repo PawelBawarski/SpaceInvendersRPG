@@ -1,4 +1,4 @@
-import { Mesh, type Scene, VertexData } from '@babylonjs/core'
+import { Mesh, type Scene, VertexData } from './babylon'
 
 /** A nose-to-tail elliptical section of a molded shell. */
 export type HullSection = readonly [z: number, halfWidth: number, halfHeight: number, x?: number, y?: number]

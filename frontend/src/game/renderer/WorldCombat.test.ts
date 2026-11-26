@@ -4,6 +4,8 @@ import { createWorldShip, getGalaxyWorld, ORION_DRONES, ORION_PLANETS, type Gala
 import { buildMissionHostiles, getMission, MISSIONS, type MissionId } from '../missions/definitions'
 import { completeWorldMission, createEmptyMissionProgress, recordMissionObjectiveProgress, type MissionProgress } from '../progress/missionProgress'
 import { createWorldCombat, type WorldCombatInput } from './WorldCombat'
+import { BOSS_RAGE_HULL_FRACTION, getBossManeuver, getEnemyManeuver, RETREAT_HULL_FRACTION } from '../domain/enemyManeuvers'
+import { PLAYER_WEAPON } from '../domain/weapon'
 
 vi.mock('./DamageNumber', () => ({
   createDamageNumber: (scene: Scene) => ({
@@ -23,19 +25,20 @@ function setup(initial = createEmptyMissionProgress(), world?: GalaxyWorld) {
   const advance = vi.fn((id: MissionId, count: number) => { progress = recordMissionObjectiveProgress(progress, id, count) })
   const hit = vi.fn()
   const impact = vi.fn()
+  const aim = vi.fn()
   const contact = vi.fn()
   const defeated = vi.fn((id: string) => { progress = { ...progress, defeatedDrones: [...progress.defeatedDrones, id] } })
   const combat = createWorldCombat(scene, {
     getProgress: () => progress, onPlayerHit: hit, onEnemyDefeated: defeated,
     onMissionComplete: complete, onMissionProgress: advance, onMessage: vi.fn(), onShot: vi.fn(),
-    onImpact: impact, onPlayerContact: contact, damageNumbers: [],
+    onImpact: impact, onPlayerContact: contact, onAimChanged: aim, damageNumbers: [],
   }, world)
   resources.push(combat)
   const update = (position: Vector3, options: Partial<WorldCombatInput> = {}, seconds = 0.1) => combat.update(seconds, {
     position, previousPosition: position.clone(), velocity: Vector3.Zero(), forward: Vector3.Forward(), right: Vector3.Right(),
     firing: false, bonuses: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }, weaponRarity: 'standard', ...options,
   })
-  return { combat, scene, update, hit, complete, advance, defeated, impact, contact, getProgress: () => progress }
+  return { combat, scene, update, hit, complete, advance, defeated, impact, contact, aim, getProgress: () => progress }
 }
 
 describe('physical world encounters', () => {
@@ -56,9 +59,49 @@ describe('physical world encounters', () => {
     expect(target.health).toBe(target.maxHealth)
     expect(target.hitFlash).toBeGreaterThan(0)
     const parts = drones.map(drone => scene.getTransformNodeByName(drone.id)!.getChildMeshes())
-    expect(parts[0]).toHaveLength(4)
-    expect(parts[0].every(mesh => mesh.isEnabled())).toBe(true)
+    expect(parts[0].filter(mesh => mesh.isEnabled())).toHaveLength(4)
+    expect(parts[0].filter(mesh => mesh.name.startsWith('hull-damage-')).every(mesh => !mesh.isEnabled())).toBe(true)
     expect(parts[0].map(mesh => mesh.geometry)).toEqual(parts[1].map(mesh => mesh.geometry))
+  })
+
+  it('leaves a near miss untouched, outlines only a direct sight line and shows damage after a manual hit', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(.5)
+    const drone = { ...createWorldShip('aim-test', 'meridian', 'scout', { x: 27, y: 0, z: 180 }), speed: 0 }
+    const { scene, update, impact, aim } = setup(undefined, { ...getGalaxyWorld('vesper', 0), drones: [drone], planets: [] })
+    const origin = Vector3.Zero()
+    for (let frame = 0; frame < 8; frame++) update(origin, { firing: true }, .04)
+    expect(impact).not.toHaveBeenCalled()
+    expect(aim).not.toHaveBeenCalled()
+
+    const direction = new Vector3(drone.x, drone.y, drone.z).normalize()
+    const sight = { origin, direction, convergence: direction.scale(PLAYER_WEAPON.sightConvergence) }
+    update(origin, { sight })
+    const target = scene.getTransformNodeByName(drone.id)!
+    const pieces = target.getChildMeshes()
+    expect(aim).toHaveBeenLastCalledWith(target)
+    for (let frame = 0; frame < 5 && !impact.mock.calls.length; frame++) update(origin, { sight, firing: true }, .04)
+    expect(impact).toHaveBeenCalled()
+    expect(pieces.some(mesh => mesh.name.startsWith('hull-damage-') && mesh.isEnabled())).toBe(true)
+    update(origin)
+    expect(aim).toHaveBeenLastCalledWith(null)
+  })
+
+  it('changes flanks at distance, flees with critical hull, and keeps every boss pattern attacking', () => {
+    for (const kind of ['scout', 'interceptor', 'bomber', 'frigate'] as const) {
+      const first = getEnemyManeuver(kind, 200, 360, 0, false)
+      const later = getEnemyManeuver(kind, 200, 360, 8, false)
+      expect(first.strafe).toBeGreaterThan(0)
+      expect(later.strafe).toBeLessThan(0)
+      expect(getEnemyManeuver(kind, 200, 360, 0, false, RETREAT_HULL_FRACTION)).toMatchObject({ retreating: true, advance: -1 })
+    }
+    const patterns = ['aimed', 'fan', 'burst', 'spiral'] as const
+    for (const pattern of patterns) {
+      const healthy = getBossManeuver(pattern, 1, 460, 650, 1)
+      const critical = getBossManeuver(pattern, 1, 460, 650, BOSS_RAGE_HULL_FRACTION)
+      expect(critical.advance).toBeGreaterThanOrEqual(0)
+      expect(critical.pace).toBeGreaterThan(healthy.pace)
+    }
+    expect(new Set(patterns.map(pattern => getBossManeuver(pattern, 1, 460, 650, 1).lift)).size).toBe(patterns.length)
   })
 
   it('sweeps ship contact at speed and keeps boss hull and shield immune to ramming', () => {

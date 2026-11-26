@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode } from '@babylonjs/core'
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode } from './babylon'
 import type { FactionId } from '../domain/worldFactions'
 import { createSceneMaterial } from './sectorDepth'
 

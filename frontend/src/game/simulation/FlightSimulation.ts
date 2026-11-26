@@ -1,12 +1,15 @@
 import type { FlightCommand, MouseFlightInput } from '../input/InputController'
 import type { ShipPartBonuses } from '../progress/shipParts'
 import { DODGE_TIMING } from '../domain/combat'
+import { BASE_SHIP_VITALS } from '../domain/shipTelemetry'
 
 export const FLIGHT_SPEEDS = { cruise: 292.5, reverse: 241.8 } as const
+export const FLIGHT_STEERING = { pitchRate: 1.1, yawRate: 1.25, rollRate: 2.4, pitchLimit: 1.25, dodgeStep: 7 } as const
 const SPEED_RESPONSE = 2.6
+const MAX_DODGE_COOLDOWN_REDUCTION = 0.55
 
 export function getDodgeCooldown(bonuses: Pick<ShipPartBonuses, 'dodgeCooldownPercent'>): number {
-  return DODGE_TIMING.cooldown * (1 - Math.min(.55, (bonuses.dodgeCooldownPercent ?? 0) / 100))
+  return DODGE_TIMING.cooldown * (1 - Math.min(MAX_DODGE_COOLDOWN_REDUCTION, (bonuses.dodgeCooldownPercent ?? 0) / 100))
 }
 
 export interface FlightState {
@@ -36,8 +39,7 @@ export function createFlightState(): FlightState {
     dodgeCooldown: 0,
     dodgeElapsed: 0,
     activeDodge: false,
-    shield: 100,
-    hull: 100,
+    ...BASE_SHIP_VITALS,
     perfectBonus: 0,
   }
 }
@@ -58,7 +60,7 @@ export function readFlightUpdate(
 
 export function integrateShipRoll(angle: number, command: number, dt: number, handling = 1): number {
   // The chase camera faces +Z; positive roll lowers the port wing on screen.
-  return angle + command * 2.4 * handling * Math.max(0, dt)
+  return angle + command * FLIGHT_STEERING.rollRate * handling * Math.max(0, dt)
 }
 
 export function approachFlightSpeed(speed: number, targetSpeed: number, dt: number): number {

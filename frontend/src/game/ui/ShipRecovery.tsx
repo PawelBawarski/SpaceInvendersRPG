@@ -1,23 +1,44 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { useEffect, useRef, useState } from 'react'
-import { Color3, Color4, DirectionalLight, Engine, FreeCamera, GlowLayer, HemisphericLight, Mesh, MeshBuilder, Scene, ShadowGenerator, SpotLight, StandardMaterial, Vector3 } from '@babylonjs/core'
+import { Color3, Color4, DirectionalLight, Engine, FreeCamera, GlowLayer, HemisphericLight, ImageProcessingConfiguration, Mesh, MeshBuilder, Scene, ShadowGenerator, SpotLight, StandardMaterial, Vector3, VertexBuffer, VertexData } from '../renderer/babylon'
 import type { PlanetSite } from '../domain/exploration'
 import { GameAudio } from '../audio/GameAudio'
 import type { GraphicsSettings } from '../progress/gameSettings'
 import { createPlanetLandscape } from '../renderer/PlanetLandscape'
 import { createShipVisual } from '../renderer/shipVisual'
+import { showHullDamage } from '../renderer/HullDamage'
+import { IconButton } from './ActionIcon'
 import { createLandingGear } from '../renderer/LandingGear'
 import { createFlightEffects } from '../renderer/FlightEffects'
 import { createShipBurnEffect } from '../renderer/StarHazard'
 import { getHardwareScaling, spaceEffectsProfile } from '../renderer/spaceEffectsProfile'
 import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY } from '../simulation/HangarLanding'
-import { RECOVERY_LAUNCH_DURATION, sampleRecoveryLaunch } from '../simulation/ShipRecovery'
+import { RECOVERY_COMPLETE_MASK, RECOVERY_LAUNCH_DURATION, sampleRecoveryLaunch } from '../simulation/ShipRecovery'
+import { BASE_SHIP_VITALS, FIRST_FLIGHT_VITALS } from '../domain/shipTelemetry'
 import { LaunchDiagnostics } from './LaunchDiagnostics'
 import './ShipRecovery.css'
+
+const WRECK_HULL_FRACTION = .24
+
+function profileBasalt(rock: Mesh, phase: number) {
+  const positions = rock.getVerticesData(VertexBuffer.PositionKind)!
+  const normals = new Array<number>(positions.length)
+  for (let index = 0; index < positions.length; index += 3) {
+    const [x, y, z] = [positions[index], positions[index + 1], positions[index + 2]]
+    const fracture = Math.sin(x * 5 + z * 7 + phase) * .13 + Math.cos(y * 8 - z * 5) * .11
+    positions[index] = x * (1 + fracture) + y * .21
+    positions[index + 1] = y * (1 + fracture) + x * .15
+    positions[index + 2] = z * (1 + fracture)
+  }
+  VertexData.ComputeNormals(positions, rock.getIndices()!, normals)
+  rock.setVerticesData(VertexBuffer.PositionKind, positions)
+  rock.setVerticesData(VertexBuffer.NormalKind, normals)
+}
 
 interface Props {
   planet: PlanetSite
   graphics: GraphicsSettings
-  language: 'pl' | 'en'
+  language: GameLanguage
   repairMask: number
   launching: boolean
   worldReady: boolean
@@ -30,7 +51,6 @@ interface Props {
 
 export function ShipRecovery(props: Props) {
   const { planet, language, repairMask, launching, onRepair, onLaunch, onExit } = props
-  const pl = language === 'pl'
   const live = useRef(props)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [discovered, setDiscovered] = useState(false)
@@ -44,22 +64,26 @@ export function ShipRecovery(props: Props) {
     engine.setHardwareScalingLevel(getHardwareScaling(graphics))
     const scene = new Scene(engine)
     scene.clearColor = new Color4(0.004, 0.008, 0.015, 1)
+    scene.imageProcessingConfiguration.toneMappingEnabled = true
+    scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
+    scene.imageProcessingConfiguration.exposure = .86
+    scene.imageProcessingConfiguration.contrast = 1.19
     const camera = new FreeCamera('recoveryCamera', new Vector3(17, 8, -22), scene)
     camera.minZ = 0.1
     camera.maxZ = 4000
     camera.setTarget(new Vector3(0, 0, 1.5))
     const ambient = new HemisphericLight('recoveryAmbient', Vector3.Up(), scene)
     ambient.diffuse = Color3.FromHexString('#b7cee3')
-    ambient.intensity = 0.62
+    ambient.intensity = .43
     ambient.groundColor = new Color3(0.07, 0.11, 0.15)
     const workLight = new SpotLight('recoveryWorkLight', new Vector3(-4.8, 6.5, -4.5),
       new Vector3(.48, -.74, .5).normalize(), 1.55, 2, scene)
     workLight.diffuse = Color3.FromHexString('#ffdfb4')
     workLight.range = 22
-    workLight.intensity = .93
+    workLight.intensity = 1.24
     const moonlight = new DirectionalLight('recoveryMoonlight', new Vector3(.46, -.71, .53), scene)
     moonlight.diffuse = Color3.FromHexString('#8cb6e2')
-    moonlight.intensity = .65
+    moonlight.intensity = .53
     const quality = graphics.graphicsQuality
     const profile = spaceEffectsProfile(quality)
     const glow = new GlowLayer('recoveryGlow', scene, { mainTextureRatio: profile.glowRatio, blurKernelSize: profile.glowKernel })
@@ -96,9 +120,11 @@ export function ShipRecovery(props: Props) {
     Mesh.MergeMeshes(deckMarks, true)?.freezeWorldMatrix()
     const basalt = new StandardMaterial('recoveryBasalt', scene)
     basalt.diffuseColor = Color3.Lerp(Color3.FromHexString(planet.color), new Color3(.19, .23, .27), .7)
+    basalt.diffuseTexture = landscape.regolith
     basalt.specularColor = new Color3(.035, .045, .056)
     const fragments = Array.from({ length: 16 }, (_, index) => {
       const rock = MeshBuilder.CreateIcoSphere('recoveryRock', { radius: 1, subdivisions: 2 + index % 2, flat: false }, scene)
+      profileBasalt(rock, index * .71)
       const side = index < 11 ? -1 : 1
       const size = .3 + (index * 7 % 9) * .1
       rock.scaling.set(size * (1.2 + index % 3 * .23), size * (.39 + index % 4 * .11), size)
@@ -138,6 +164,7 @@ export function ShipRecovery(props: Props) {
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(0.1, engine.getDeltaTime() / 1000)
       const current = live.current
+      showHullDamage(ship, current.repairMask === RECOVERY_COMPLETE_MASK ? FIRST_FLIGHT_VITALS.hull / BASE_SHIP_VITALS.hull : WRECK_HULL_FRACTION)
       elapsed += dt
       uiClock += dt
       canvas.dataset.repairMask = String(current.repairMask)
@@ -178,14 +205,14 @@ export function ShipRecovery(props: Props) {
       effects.dispose(); burn.dispose(); audio.dispose(); scene.dispose(); engine.dispose()
     }
   }, [planet])
-  return <main className="ship-recovery" aria-label={pl ? 'Odnalezienie i naprawa statku' : 'Ship discovery and repair'}>
-    <canvas ref={canvasRef} className="recovery-canvas" aria-label={pl ? 'Statek na powierzchni planety' : 'Ship on planetary surface'} />
-    <header><span>MERIDIAN / {planet.name[language]}</span><h1>{launching ? (pl ? 'Ku gwiazdom' : 'Into the stars') : discovered ? (pl ? 'Jeszcze poleci' : 'She will fly again') : (pl ? 'Sygnał w pyle' : 'A signal in the dust')}</h1>
-      <p>{launching ? (pl ? 'Vanta odzyskuje niebo.' : 'Vanta takes back the sky.') : discovered ? (pl ? 'Znalazłeś Vantę. Przywróć połączenia, zanim ruszysz w przestrzeń.' : 'You found Vanta. Restore the connections before taking flight.') : (pl ? 'Samotny mechanik. Porzucony zwiadowca. Początek drogi.' : 'A lone mechanic. An abandoned scout. A new beginning.')}</p>
+  return <main className="ship-recovery" aria-label={gameText(language).recovery.shipDiscoveryAndRepair}>
+    <canvas ref={canvasRef} className="recovery-canvas" aria-label={gameText(language).recovery.shipOnPlanetarySurface} />
+    <header><span>MERIDIAN / {planet.name[language]}</span><h1>{launching ? (gameText(language).recovery.intoTheStars) : discovered ? (gameText(language).recovery.sheWillFlyAgain) : (gameText(language).recovery.aSignalInTheDust)}</h1>
+      <p>{launching ? (gameText(language).recovery.vantaTakesBackTheSky) : discovered ? (gameText(language).recovery.youFoundVantaRestoreTheConnections) : (gameText(language).recovery.aLoneMechanicAnAbandonedScout)}</p>
     </header>
-    {!launching && <button type="button" className="recovery-exit" onClick={onExit} aria-label={pl ? 'Wróć do menu' : 'Return to menu'}>×</button>}
+    {!launching && <IconButton icon="close" className="recovery-exit" onClick={onExit} label={gameText(language).recovery.returnToMenu} />}
     {discovered && !launching && <LaunchDiagnostics mask={repairMask} language={language} onRepair={onRepair} onLaunch={onLaunch} />}
-    {launching && <div className="recovery-launch-status" role="status"><span>{pl ? 'Start z powierzchni' : 'Surface departure'}</span><div role="progressbar" aria-label={pl ? 'Postęp startu' : 'Launch progress'} aria-valuenow={Math.round(launchProgress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${launchProgress * 100}%` }}/></div></div>}
+    {launching && <div className="recovery-launch-status" role="status"><span>{gameText(language).recovery.surfaceDeparture}</span><div role="progressbar" aria-label={gameText(language).recovery.launchProgress} aria-valuenow={Math.round(launchProgress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${launchProgress * 100}%` }}/></div></div>}
     <div className="recovery-fade" style={{ opacity: sampleRecoveryLaunch(launchProgress).fade }} aria-hidden="true" />
   </main>
 }

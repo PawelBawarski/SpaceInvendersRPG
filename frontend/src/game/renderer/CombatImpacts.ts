@@ -1,4 +1,4 @@
-import { Color3, Constants, MeshBuilder, Quaternion, Scene, Vector3 } from '@babylonjs/core'
+import { Color3, Constants, MeshBuilder, Quaternion, Scene, Vector3 } from './babylon'
 import { createSceneMaterial } from './sectorDepth'
 
 export type CombatImpactKind = 'armor' | 'shield' | 'collision'

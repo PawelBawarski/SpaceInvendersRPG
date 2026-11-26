@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode, Vector3 } from '@babylonjs/core'
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode, Vector3 } from './babylon'
 import type { MerchantSite } from '../domain/exploration'
 import { createSceneMaterial } from './sectorDepth'
 

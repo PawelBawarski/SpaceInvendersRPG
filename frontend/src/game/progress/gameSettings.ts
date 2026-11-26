@@ -1,11 +1,13 @@
+import { DEFAULT_GAME_LANGUAGE, isGameLanguage, type GameLanguage } from '../i18n'
 import {
   DEFAULT_CONTROL_BINDINGS,
   DEFAULT_MOUSE_SENSITIVITY,
   FLIGHT_COMMANDS,
+  MOUSE_SENSITIVITY_RANGE,
   type ControlBindings,
 } from '../input/InputController'
 
-export type GameLanguage = 'pl' | 'en'
+export type { GameLanguage } from '../i18n'
 export type GraphicsQuality = 'low' | 'standard' | 'high'
 export const RENDER_SCALES = [0.5, 0.67, 0.85, 1, 1.2] as const
 export type RenderScale = (typeof RENDER_SCALES)[number]
@@ -33,7 +35,7 @@ export interface GameSettings extends GraphicsSettings {
 const STORAGE_KEY = 'neon-void:settings:v1'
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
-  language: 'pl',
+  language: DEFAULT_GAME_LANGUAGE,
   graphicsQuality: 'standard',
   renderScale: null,
   bloom: true,
@@ -110,7 +112,7 @@ function loadVolume(value: unknown, fallback: number): number {
 
 function loadMouseSensitivity(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(0.5, Math.min(3, value))
+    ? Math.max(MOUSE_SENSITIVITY_RANGE.min, Math.min(MOUSE_SENSITIVITY_RANGE.max, value))
     : DEFAULT_MOUSE_SENSITIVITY
 }
 
@@ -120,7 +122,7 @@ export function loadGameSettings(): GameSettings {
     if (!raw) return { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_CONTROL_BINDINGS } }
     const parsed = JSON.parse(raw) as Partial<GameSettings>
     return {
-      language: parsed.language === 'en' ? 'en' : 'pl',
+      language: isGameLanguage(parsed.language) ? parsed.language : DEFAULT_GAME_LANGUAGE,
       graphicsQuality: parsed.graphicsQuality === 'low' || parsed.graphicsQuality === 'high'
         ? parsed.graphicsQuality
         : 'standard',

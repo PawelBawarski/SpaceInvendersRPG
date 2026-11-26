@@ -1,6 +1,7 @@
+import { formatText, localizedText, type LocalizedText } from '../i18n'
 import { buildPlanetDefenders } from '../domain/planetOrbit'
 import { remainingRespawnSeconds, ROAMING_RESPAWN_SECONDS } from '../domain/enemyRespawn'
-import { Color3, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from '@babylonjs/core'
+import { Color3, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from './babylon'
 import { FACTIONS, ORION_DRONES, ORION_PLANETS, ORION_SECTOR_ID, SHIP_ARCHETYPES, type DroneSite, type FactionId, type GalaxyWorld, type ShipArchetype } from '../domain/exploration'
 import { resolveBossDamage } from '../domain/combat'
 import { getSignalPulseState } from '../domain/signalPulse'
@@ -11,6 +12,7 @@ import type { ShipPartBonuses, ShipPartRarity } from '../progress/shipParts'
 import type { CombatImpactKind } from './CombatImpacts'
 import { createDamageNumber, type FloatingDamageNumber } from './DamageNumber'
 import { createFleetModelLibrary } from './WorldFleetVisual'
+import { showHullDamage } from './HullDamage'
 import { createSceneMaterial } from './sectorDepth'
 import { segmentSphereContact } from './worldCombatMath'
 import { segmentBoundsOverlapSphere } from './collisionBroadphase'
@@ -19,13 +21,13 @@ import type { DamageSource } from '../domain/damageFeedback'
 import { getEnemyIdentity } from '../domain/enemyIdentity'
 import { sampleFormationPosition, samplePatrolRoute, type PatrolFormation } from '../domain/patrolFormation'
 import { SpatialIndex } from '../simulation/SpatialIndex'
-import { ENEMY_SHIELD_DELAY, getEnemyManeuver, getEnemyShieldCapacity, getShipContactDamage, PLAYER_CONTACT_RADIUS, SHIP_CONTACT_COOLDOWN } from '../domain/enemyManeuvers'
+import { BOSS_RAGE_HULL_FRACTION, ENEMY_SHIELD_DELAY, getBossManeuver, getEnemyManeuver, getEnemyShieldCapacity, getShipContactDamage, PLAYER_CONTACT_RADIUS, SHIP_CONTACT_COOLDOWN } from '../domain/enemyManeuvers'
 import type { RadarTarget } from '../domain/flightRadar'
 
 export interface EnemyNameplateTarget {
   id: string
   position: Vector3
-  name: { pl: string; en: string }
+  name: LocalizedText
   level: number
   boss: boolean
   hitRadius: number
@@ -92,10 +94,6 @@ export interface WorldCombatStatus {
   completedObjectives: number
   requiredObjectives: number
   engaged: boolean
-  targetName: string | null
-  targetHealth: number
-  targetMaximumHealth: number
-  faction: FactionId | null
 }
 
 interface CombatCallbacks {
@@ -105,10 +103,11 @@ interface CombatCallbacks {
   onEnemyRespawn?: (id: string) => void
   onMissionComplete: (id: MissionId) => void
   onMissionProgress: (id: MissionId, count: number) => void
-  onMessage: (polish: string, english: string) => void
+  onMessage: (message: LocalizedText) => void
   onShot: () => void
   onImpact: (position: Vector3, normal: Vector3, scale: number, kind: CombatImpactKind) => void
   onPlayerContact?: (safePosition: Vector3) => void
+  onAimChanged?: (target: TransformNode | null) => void
   damageNumbers: FloatingDamageNumber[]
 }
 
@@ -118,6 +117,7 @@ export interface WorldCombatInput {
   velocity: Vector3
   forward: Vector3
   right: Vector3
+  sight?: { origin: Vector3; direction: Vector3; convergence: Vector3 }
   firing: boolean
   bonuses: ShipPartBonuses
   weaponRarity: ShipPartRarity
@@ -126,11 +126,22 @@ export interface WorldCombatInput {
 const RENDER_DISTANCE = 3200
 const ACTIVE_ENEMY_LIMIT = 96
 const MAX_IDLE_BOLT_MESHES = 48
+const ENEMY_QUERY_SECONDS = 0.15
+const ENEMY_QUERY_MOVEMENT = 45
+const ENEMY_QUERY_PADDING = 250
+const ENEMY_PLANET_PADDING = 300
+const DORMANT_FORMATION_SECONDS = 0.25
+const VISUAL_CLEANUP_SECONDS = 1
+const MUZZLE = { forward: 1.8, separation: 1.1 }
+const RETREAT_SPEED_FACTOR = 1.35
+const RETREAT_LEASH_FACTOR = 2
+const BOSS_LEASH_RADIUS = 210
+const ENEMY_STEERING_RESPONSE = 4
 
 export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, world?: GalaxyWorld) {
-  const missions = !world || world.galaxy.id === ORION_SECTOR_ID ? MISSIONS : []
-  const planetSites = world?.planets ?? ORION_PLANETS
   const initial = callbacks.getProgress()
+  const missions = !initial.initialRepairRequired && (!world || world.galaxy.id === ORION_SECTOR_ID) ? MISSIONS : []
+  const planetSites = world?.planets ?? ORION_PLANETS
   const finished = new Set<MissionId>(missions.filter(mission => isMissionComplete(initial, mission.id)).map(mission => mission.id))
   const counts = new Map<MissionId, number>(missions.map(mission => [mission.id, initial.missionObjectiveProgress?.[mission.id] ?? 0]))
   const defeated = new Set(initial.defeatedDrones)
@@ -160,8 +171,14 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
   const travel = new Vector3()
   const originOffset = new Vector3()
   const steering = new Vector3()
+  const flightHeading = new Vector3()
+  const sightEnd = new Vector3()
+  const defaultConvergence = new Vector3()
+  let aimedActor: Actor | null = null
   const previousQueryPosition = new Vector3()
   let selection: Actor[] = []
+  let selectedActors = new Set<Actor>()
+  let nearbyPlanets: typeof planets = []
   let queryClock = Infinity
   const playerBoltPool: Mesh[] = []
   const hostileBoltPool: Mesh[] = []
@@ -196,7 +213,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
   let playerFireClock = 0
   let latestStatus: WorldCombatStatus = {
     mission: null, boss: null, completedObjectives: 0, requiredObjectives: 0,
-    engaged: false, targetName: null, targetHealth: 0, targetMaximumHealth: 0, faction: null,
+    engaged: false,
   }
 
   const syncFormation = (group: PatrolGroup) => {
@@ -287,7 +304,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
     if (finished.has(mission.id)) return
     finished.add(mission.id)
     callbacks.onMissionComplete(mission.id)
-    callbacks.onMessage(`Cel ukończony: ${mission.title.pl}`, `Objective complete: ${mission.title.en}`)
+    callbacks.onMessage(localizedText((text, language) => formatText(text.combat.objectiveComplete, { mission: mission.title[language] })))
   }
 
   const advanceObjective = (mission: MissionDefinition) => {
@@ -323,6 +340,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
     const vitals = resolveBossDamage({ health: actor.health, shield: actor.shield, amount })
     actor.health = vitals.health
     actor.shield = vitals.shield
+    if (actor.root) showHullDamage(actor.root, actor.health / actor.maxHealth)
     callbacks.damageNumbers.push(createDamageNumber(scene, point, before - actor.health - actor.shield, critical))
     if (actor.health <= 0) destroyActor(actor)
   }
@@ -377,7 +395,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
     Quaternion.FromLookDirectionLHToRef(direction, Vector3.UpReadOnly, mesh.rotationQuaternion!)
     mesh.material = faction ? hostileMaterials.get(faction)! : shotMaterial
     mesh.setEnabled(true)
-    bolts.push({ mesh, velocity, damage, critical, hostile, source, remaining: hostile ? 8 : 2.8 })
+    bolts.push({ mesh, velocity, damage, critical, hostile, source, remaining: hostile ? 8 : PLAYER_WEAPON.projectileLifetime })
   }
 
   const releaseBolt = (bolt: Bolt) => {
@@ -389,19 +407,31 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
   }
 
   const pickAimTarget = (input: WorldCombatInput) => {
-    let best: Actor | null = null
-    let bestScore = Infinity
+    const from = input.sight?.origin ?? input.position
+    const direction = input.sight?.direction ?? input.forward
+    direction.scaleToRef(PLAYER_WEAPON.projectileSpeed * PLAYER_WEAPON.projectileLifetime, sightEnd).addInPlace(from)
+    let target: Actor | null = null
+    let firstContact = Infinity
     for (const actor of activeActors) {
-      if (actor.defeated) continue
-      actor.position.subtractToRef(input.position, formationTravel)
-      const distance = formationTravel.length()
-      if (distance > 580 || distance < 0.001) continue
-      const alignment = Vector3.Dot(formationTravel, input.forward) / distance
-      if (alignment < 0.93) continue
-      const score = distance + (1 - alignment) * 700
-      if (score < bestScore) { best = actor; bestScore = score }
+      if (actor.defeated || !segmentBoundsOverlapSphere(from, sightEnd, actor.position, actor.hitRadius)) continue
+      const contact = segmentSphereContact(from, sightEnd, actor.position, actor.hitRadius)
+      if (contact === null || contact >= firstContact) continue
+      target = actor
+      firstContact = contact
     }
-    return best
+    if (!target) return null
+    for (const planet of planets) {
+      if (!segmentBoundsOverlapSphere(from, sightEnd, planet.center, planet.radius)) continue
+      const contact = segmentSphereContact(from, sightEnd, planet.center, planet.radius)
+      if (contact !== null && contact <= firstContact) return null
+    }
+    return target
+  }
+
+  const setAimedActor = (actor: Actor | null) => {
+    if (actor === aimedActor) return
+    aimedActor = actor
+    callbacks.onAimChanged?.(actor?.root ?? null)
   }
 
   const streaming = { totalActors: actors.length, activeLimit: ACTIVE_ENEMY_LIMIT, activeActors: 0, candidates: 0, cachedVisuals: 0, patrolGroups: groups.size }
@@ -418,7 +448,6 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
     getRadarTargets(position: Vector3, range: number): RadarTarget[] {
       return spatial.query(position, range).filter(actor => !actor.defeated)
         .sort((a, b) => Number(b.boss) - Number(a.boss) || Vector3.DistanceSquared(a.position, position) - Vector3.DistanceSquared(b.position, position))
-        .slice(0, 26)
         .map(actor => ({ id: actor.id, kind: actor.boss ? 'boss' : 'hostile', x: actor.position.x, y: actor.position.y, z: actor.position.z }))
     },
 
@@ -468,24 +497,24 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
         if (distance <= activationRadius && distance < encounterDistance) { encounter = mission; encounterDistance = distance }
       }
 
-      if (formationClock >= 0.25) {
+      if (formationClock >= DORMANT_FORMATION_SECONDS) {
         formationClock = 0
         for (const group of groups.values()) if (!awakeGroups.has(group)) syncFormation(group)
       }
       for (const group of awakeGroups) syncFormation(group)
-      if (queryClock >= .15 || Vector3.DistanceSquared(input.position, previousQueryPosition) > 45 ** 2) {
+      if (queryClock >= ENEMY_QUERY_SECONDS || Vector3.DistanceSquared(input.position, previousQueryPosition) > ENEMY_QUERY_MOVEMENT ** 2) {
         queryClock = 0
         previousQueryPosition.copyFrom(input.position)
-        const candidates = spatial.query(input.position, RENDER_DISTANCE + 250)
+        const candidates = spatial.query(input.position, RENDER_DISTANCE + ENEMY_QUERY_PADDING)
         candidateCount = candidates.length
         candidates.sort((a, b) => Number(!b.site) - Number(!a.site) || Vector3.DistanceSquared(input.position, a.position) - Vector3.DistanceSquared(input.position, b.position))
         selection = candidates.slice(0, ACTIVE_ENEMY_LIMIT)
+        selectedActors = new Set(selection)
+        nearbyPlanets = planets.filter(planet => Vector3.DistanceSquared(input.position, planet.center)
+          <= (planet.radius + RENDER_DISTANCE + ENEMY_PLANET_PADDING + ENEMY_QUERY_MOVEMENT) ** 2)
       }
       const selected = selection
-      const nearbyPlanets = planets.filter(planet => Vector3.DistanceSquared(input.position, planet.center)
-        <= (planet.radius + RENDER_DISTANCE + 300) ** 2)
-      const selectedSet = new Set(selected)
-      for (const actor of previouslyActive) if (!selectedSet.has(actor)) actor.root?.setEnabled(false)
+      for (const actor of previouslyActive) if (!selectedActors.has(actor)) actor.root?.setEnabled(false)
       const nearbyGroups = new Set<PatrolGroup>()
       for (const actor of selected) if (actor.site?.formation) nearbyGroups.add(groups.get(actor.site.formation.id)!)
       for (const group of nearbyGroups) {
@@ -508,6 +537,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
               actor.defeated = false
               callbacks.onEnemyRespawn?.(actor.id)
               actor.health = actor.maxHealth
+              if (actor.root) showHullDamage(actor.root, 1)
               actor.shield = actor.maxShield
               actor.hitFlash = 0
               actor.lastHitAt = -Infinity
@@ -528,6 +558,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
           actor.root = fleetModels.create(actor.id, actor.faction, actor.archetype, actor.boss,
             actor.mission?.id === 'null-choir' || actor.maxHealth >= 700)
           actor.root.metadata = { worldEnemyId: actor.id, faction: actor.faction, archetype: actor.archetype, missionId: actor.mission?.id, hitRadius: actor.hitRadius, enemyName: actor.name, enemyLevel: actor.level, formationId: actor.site?.formation?.id, formationSlot: actor.site?.formation?.slot }
+          showHullDamage(actor.root, actor.health / actor.maxHealth)
           cachedVisuals.add(actor)
         }
         actor.root.setEnabled(true)
@@ -539,41 +570,56 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
         }
         const base = SHIP_ARCHETYPES[actor.archetype]
         const attackRange = actor.site?.attackRange ?? Math.max(650, actor.mission?.activationRadius ?? 650)
-        if (group && actor.formationTarget && !group.alerted) {
+        const hullFraction = actor.health / actor.maxHealth
+        const beat = elapsed + actor.maneuverPhase
+        const maneuver = actor.site ? getEnemyManeuver(actor.archetype, distance, attackRange, beat, actor.hitFlash > 0, hullFraction) : null
+        const retreating = maneuver?.retreating ?? false
+        const attacking = retreating || (group?.alerted ?? false) || distance < attackRange * 1.5
+        let bank = 0
+        if (group && actor.formationTarget && !attacking) {
           actor.formationTarget.subtractToRef(actor.position, formationTravel)
           const travelDistance = formationTravel.length()
           const step = group.route.speed * dt * 1.8
           if (travelDistance <= step) actor.position.copyFrom(actor.formationTarget)
           else actor.position.addInPlace(formationTravel.scaleInPlace(step / travelDistance))
-        } else if (actor.site && (group?.alerted || distance < attackRange * 1.5)) {
+        } else if (actor.site && maneuver && attacking) {
           input.position.subtractToRef(actor.position, steering)
           steering.normalize()
-          const move = getEnemyManeuver(actor.archetype, distance, attackRange, elapsed + actor.maneuverPhase, actor.hitFlash > 0)
           formationTravel.set(
-            steering.x * move.advance + steering.z * move.strafe,
-            steering.y * move.advance + move.lift,
-            steering.z * move.advance - steering.x * move.strafe,
+            steering.x * maneuver.advance + steering.z * maneuver.strafe,
+            steering.y * maneuver.advance + maneuver.lift,
+            steering.z * maneuver.advance - steering.x * maneuver.strafe,
           )
-          if (formationTravel.lengthSquared() > 1) formationTravel.normalize()
-          formationTravel.scaleInPlace((actor.site.speed ?? base.speed) * dt)
           const anchor = group?.center ?? actor.origin
-          const limit = group ? 540 : actor.mission ? 360 : 260
-          if (Vector3.DistanceSquared(actor.position, anchor) < limit ** 2) actor.position.addInPlace(formationTravel)
-          else Vector3.LerpToRef(actor.position, anchor, Math.min(1, dt * .14), actor.position)
-          actor.root.rotation.z = move.strafe * .27
-        } else if (!actor.site && actor.mission?.objective !== 'disable-signal' && distance < attackRange) {
-          const enraged = actor.health < actor.maxHealth * .45
-          const hovering = enraged ? 44 : 24
-          formationTravel.set(
-            actor.origin.x + Math.sin(elapsed * (enraged ? .67 : .37)) * hovering,
-            actor.origin.y + Math.sin(elapsed * .64) * (enraged ? 21 : 9),
-            actor.origin.z + Math.cos(elapsed * .31) * (enraged ? 27 : 13),
-          )
-          Vector3.LerpToRef(actor.position, formationTravel, Math.min(1, dt * .65), actor.position)
+          const patrolLimit = group ? 540 : actor.mission ? 360 : 260
+          const limit = retreating ? patrolLimit * RETREAT_LEASH_FACTOR : patrolLimit
+          actor.position.subtractToRef(anchor, originOffset)
+          // Turn along the edge of the patrol area instead of reversing into the player.
+          if (originOffset.lengthSquared() > limit ** 2) {
+            originOffset.normalize()
+            const outward = Math.max(0, Vector3.Dot(formationTravel, originOffset))
+            originOffset.scaleInPlace(outward + .14)
+            formationTravel.subtractInPlace(originOffset)
+          }
+          if (formationTravel.lengthSquared() > 1) formationTravel.normalize()
+          const pace = (actor.site.speed ?? base.speed) * (retreating ? RETREAT_SPEED_FACTOR : 1)
+          actor.position.addInPlace(formationTravel.scaleInPlace(pace * dt))
+          bank = maneuver.strafe * .32
+        } else if (actor.boss && actor.mission?.objective !== 'disable-signal' && distance < attackRange) {
+          input.position.subtractToRef(actor.position, steering).normalize()
+          const move = getBossManeuver(actor.mission?.bossProfile?.pattern ?? 'aimed', beat, distance, attackRange, hullFraction)
+          formationTravel.set(steering.x * move.advance + steering.z * move.strafe,
+            steering.y * move.advance + move.lift, steering.z * move.advance - steering.x * move.strafe)
+          actor.position.subtractToRef(actor.origin, originOffset)
+          const leash = originOffset.length() / BOSS_LEASH_RADIUS
+          if (leash > .45) formationTravel.subtractInPlace(originOffset.normalize().scaleInPlace(leash * leash))
+          actor.position.addInPlace(formationTravel.scaleInPlace(base.speed * move.pace * dt))
+          bank = move.strafe * .22
         } else {
-          const patrol = actor.origin.add(new Vector3(Math.sin(elapsed * 0.55 + actor.origin.z) * (actor.site ? 4 : 8), Math.cos(elapsed * 0.4 + actor.origin.x) * (actor.site ? 2 : 3), 0))
-          Vector3.LerpToRef(actor.position, patrol, Math.min(1, dt * 0.8), actor.position)
-          actor.root.rotation.z *= Math.max(0, 1 - dt * 3)
+          const radius = actor.site ? (actor.site.speed ?? base.speed) * 1.4 : 8
+          formationTravel.set(Math.sin(beat * .55) * radius, Math.sin(beat * .71) * radius * .2, Math.cos(beat * .55) * radius).addInPlace(actor.origin)
+          Vector3.LerpToRef(actor.position, formationTravel, Math.min(1, dt * .8), actor.position)
+          bank = Math.cos(beat * .55) * .16
         }
         for (const planet of nearbyPlanets) {
           const center = planet.center
@@ -594,8 +640,18 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
           actor.position.set(center.x + dx * scale, center.y + dy * scale, center.z + dz * scale)
         }
         actor.root.position.copyFrom(actor.position)
-        actor.root.rotation.y = group && !group.alerted ? Math.atan2(group.forward.x, group.forward.z) + Math.PI : Math.atan2(input.position.x - actor.position.x, input.position.z - actor.position.z) + Math.PI
-        if (!actor.site) actor.root.rotation.z = Math.sin(elapsed * 0.3) * 0.15
+        if (group && !attacking) flightHeading.copyFrom(group.forward)
+        else if (!retreating && (attacking || actor.boss)) input.position.subtractToRef(actor.position, flightHeading)
+        else actor.position.subtractToRef(actor.previousPosition, flightHeading)
+        const turn = 1 - Math.exp(-dt * ENEMY_STEERING_RESPONSE)
+        if (flightHeading.lengthSquared() > .0001) {
+          const bearing = Math.atan2(flightHeading.x, flightHeading.z) + Math.PI
+          const delta = bearing - actor.root.rotation.y
+          actor.root.rotation.y += Math.atan2(Math.sin(delta), Math.cos(delta)) * turn
+          const pitch = Math.atan2(flightHeading.y, Math.hypot(flightHeading.x, flightHeading.z))
+          actor.root.rotation.x += (pitch - actor.root.rotation.x) * turn
+        }
+        actor.root.rotation.z += (bank - actor.root.rotation.z) * turn
         if (distance < closestDistance) { closest = actor; closestDistance = distance }
         if (!actor.site && distance < attackRange) boss = actor
         if (actor.mission && !finished.has(actor.mission.id) && distance < 300 && distance < encounterDistance) {
@@ -603,9 +659,9 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
           encounterDistance = distance
         }
         actor.fireClock -= dt
-        if (distance > attackRange || actor.fireClock > 0) continue
+        if (retreating || distance > attackRange || actor.fireClock > 0) continue
         const profile = actor.site ? undefined : actor.mission?.bossProfile
-        const rage = actor.health < actor.maxHealth * 0.45 ? 0.78 : 1
+        const rage = actor.boss && hullFraction <= BOSS_RAGE_HULL_FRACTION ? .78 : 1
         actor.fireClock = (actor.site?.attackInterval ?? profile?.attackInterval ?? base.attackInterval) * rage
         const speed = actor.site?.projectileSpeed ?? profile?.projectileSpeed ?? base.projectileSpeed
         const amount = actor.site?.damage ?? profile?.damage ?? base.damage
@@ -655,7 +711,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
       streaming.activeActors = activeActors.length
       streaming.candidates = candidateCount
       streaming.cachedVisuals = cachedVisuals.size
-      if (visualCleanupClock >= 1) {
+      if (visualCleanupClock >= VISUAL_CLEANUP_SECONDS) {
         visualCleanupClock = 0
         for (const actor of cachedVisuals) {
           if (Vector3.DistanceSquared(input.position, actor.position) <= (RENDER_DISTANCE * 3) ** 2) continue
@@ -665,15 +721,15 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
         }
       }
 
-      const aimTarget = pickAimTarget(input)
       if (input.firing && playerFireClock <= 0) {
         playerFireClock = PLAYER_WEAPON.fireCooldown
         callbacks.onShot()
         const hit = resolveWeaponHit(input.bonuses, Math.random, false, input.weaponRarity)
+        const convergence = input.sight?.convergence ?? input.forward.scaleToRef(PLAYER_WEAPON.sightConvergence, defaultConvergence).addInPlace(input.position)
         for (const side of [-1, 1]) {
-          const position = input.position.add(input.forward.scale(1.8)).addInPlace(input.right.scale(side * 1.1))
-          const direction = aimTarget ? aimTarget.position.subtract(position).normalize() : input.forward.clone()
-          spawnBolt(position, direction, direction.scale(PLAYER_WEAPON.projectileSpeed).add(input.velocity), hit.damage, hit.critical, null)
+          const position = input.position.add(input.forward.scale(MUZZLE.forward)).addInPlace(input.right.scale(side * MUZZLE.separation))
+          const direction = convergence.subtract(position).normalize()
+          spawnBolt(position, direction, direction.scale(PLAYER_WEAPON.projectileSpeed), hit.damage, hit.critical, null)
         }
       }
 
@@ -747,11 +803,12 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
           pickup.collected = true
           pickup.mesh?.dispose()
           advanceObjective(pickup.mission)
-          callbacks.onMessage('Odzyskano czarną skrzynkę przekaźnika.', 'Relay black box recovered.')
+          callbacks.onMessage(localizedText(text => text.combat.relayBlackBoxRecovered))
         }
       }
 
-      const visibleTarget = aimTarget ?? (closestDistance < 230 ? closest : null)
+      const aimTarget = pickAimTarget(input)
+      setAimedActor(aimTarget)
       if (boss && !boss.defeated) encounter = boss.mission
       latestStatus = {
         mission: encounter,
@@ -764,11 +821,6 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
         completedObjectives: encounter ? counts.get(encounter.id) ?? 0 : 0,
         requiredObjectives: encounter ? encounter.objective === 'recover-fragments' ? 3 : encounter.requiredKills ?? 0 : 0,
         engaged: closestDistance < (closest?.site?.attackRange ?? Math.max(650, closest?.mission?.activationRadius ?? 650)) || boss !== null,
-        targetName: visibleTarget ? visibleTarget.mission?.bossProfile && !visibleTarget.site
-          ? visibleTarget.mission.title.pl : visibleTarget.archetype : null,
-        targetHealth: visibleTarget?.health ?? 0,
-        targetMaximumHealth: visibleTarget?.maxHealth ?? 0,
-        faction: visibleTarget?.faction ?? null,
       }
     },
 

@@ -1,8 +1,9 @@
-import { Color3, Mesh, MeshBuilder, type Scene, type StandardMaterial, TransformNode, Vector3 } from '@babylonjs/core'
+import { Color3, Mesh, MeshBuilder, type Scene, type StandardMaterial, TransformNode, Vector3 } from './babylon'
 import { FACTIONS, type FactionId, type ShipArchetype } from '../domain/exploration'
 import { BOSS_VISUAL_SCALE, ENEMY_VISUAL_SCALE } from '../domain/enemyScale'
 import { createSceneMaterial } from './sectorDepth'
 import { createProfiledHull, type HullSection } from './ProfiledHull'
+import { addHullScars } from './HullDamage'
 
 type Surface = 'shell' | 'alloy' | 'glass' | 'pulse'
 
@@ -35,8 +36,8 @@ function buildFleetModel(scene: Scene, name: string, faction: FactionId, archety
     const color = colors[surface]
     material.diffuseColor = color
     material.specularColor = new Color3(.55, .64, .73)
-    material.specularPower = surface === 'glass' ? 132 : 66
-    material.emissiveColor = color.scale(surface === 'pulse' ? .95 : surface === 'glass' ? .13 : .15)
+    material.specularPower = surface === 'glass' ? 132 : surface === 'shell' ? 51 : 78
+    material.emissiveColor = color.scale(surface === 'pulse' ? .95 : surface === 'glass' ? .13 : .17)
     material.disableLighting = surface === 'pulse'
     material.maxSimultaneousLights = 4
     materials.set(surface, material)
@@ -91,6 +92,18 @@ function buildFleetModel(scene: Scene, name: string, faction: FactionId, archety
     ], 'alloy', 14)
     coil('nozzle-' + side, engineX, engineY, tail + .01, engineRadius * 1.5, engineRadius * .37, 'shell')
     coil('nozzle-ion-' + side, engineX, engineY, tail + .025, engineRadius * 1.17, engineRadius * .2)
+    const platingY = boss ? .21 : .13
+    shell('wing-leading-plate-' + side, [
+      [wingStart + .47, .04, .028, offset(wing * .42), platingY * .7],
+      [-.13, wing * .095, .041, offset(wing * .54), platingY],
+      [tail * .38, wing * .10, .051, offset(wing * .71), platingY * .84],
+      [tail * .61, .021, .016, offset(wing * .89), platingY * .43],
+    ], 'shell', 12)
+    for (let vent = 0; vent < (boss ? 4 : 2); vent++) {
+      const z = tail * (.12 + vent * .09)
+      const x = offset(wing * .57)
+      guide('intake-vane-' + side + '-' + vent, [[x * .85, platingY * 1.16, z], [x * 1.13, platingY * 1.04, z - .09]], boss ? .028 : .018, 'alloy')
+    }
     guide('position-light-' + side, [[offset(wing * .54), boss ? .3 : .195, .04], [offset(wing * .73), boss ? .224 : .148, tail * .49], [offset(wing * .84), .08, tail * .66]], boss ? .031 : .023)
     if (boss || archetype !== 'scout') {
       const bank = offset(mid * (boss ? 1.5 : 1.13))
@@ -142,6 +155,12 @@ function buildFleetModel(scene: Scene, name: string, faction: FactionId, archety
     batch.parent = root
     batch.isPickable = false
   }
+  const wingDeck = boss ? .305 : .197
+  addHullScars(root, [
+    [[-wing * .68, wingDeck, tail * .29, wing * .24, -.28]],
+    [[wing * .7, wingDeck, tail * .27, wing * .27, .54], [-wing * .46, wingDeck, tail * .5, wing * .12, -1.1]],
+    [[boss ? .58 : .26, boss ? .86 : .43, boss ? -.64 : .74, boss ? .68 : .36, 1.4]],
+  ])
   root.setEnabled(false)
   return root
 }
@@ -158,7 +177,10 @@ export function createFleetModelLibrary(scene: Scene) {
         library.set(key, model)
       }
       const root = new TransformNode(name, scene)
-      for (const mesh of model.getChildMeshes(true)) mesh.clone(name + '-' + mesh.material?.name, root, true)
+      for (const mesh of model.getChildMeshes(true)) {
+        const cloneName = mesh.name.startsWith('hull-damage-') ? `${mesh.name}-${name}` : name + '-' + mesh.material?.name
+        mesh.clone(cloneName, root, true)
+      }
       const scale = boss
         ? (finalEncounter ? 1.9 : 1.6) * BOSS_VISUAL_SCALE
         : (archetype === 'scout' ? .85 : archetype === 'frigate' ? 1.35 : 1.1) * ENEMY_VISUAL_SCALE

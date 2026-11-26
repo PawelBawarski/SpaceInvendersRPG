@@ -1,3 +1,4 @@
+import { formatNumber, gameText, type GameLanguage } from '../i18n'
 import { lazy, Suspense, useState } from 'react'
 import type { ShipTelemetry } from '../domain/shipTelemetry'
 import { getShipStatistics } from '../progress/shipStatistics'
@@ -8,6 +9,7 @@ import { PartArtwork } from './EquipmentArtwork'
 import { ShipResistanceReadout } from './ShipResistanceReadout'
 import { getShipPartRarityLabel, getShipPartSlotLabel, getShipPartStatSummary } from './shipPartPresentation'
 import { PilotTraining } from './PilotTraining'
+import { IconButton } from './ActionIcon'
 import type { PilotSkillId } from '../progress/pilotSkills'
 import { BASE_RADAR_RANGE } from '../domain/flightRadar'
 import './ShipStatisticsPanel.css'
@@ -17,7 +19,7 @@ const ShipPreviewCanvas = lazy(() => import('../renderer/ShipPreviewCanvas').the
 interface ShipStatisticsPanelProps {
   progress: MissionProgress
   telemetry: ShipTelemetry | null
-  language: 'pl' | 'en'
+  language: GameLanguage
   quality: GraphicsQuality
   onClose: () => void
   onLearn: (skill: PilotSkillId) => void
@@ -26,65 +28,63 @@ interface ShipStatisticsPanelProps {
 
 export function ShipStatisticsPanel({ progress, telemetry, language, quality, onClose, onLearn, onOpenInventory }: ShipStatisticsPanelProps) {
   const [view, setView] = useState<'stats' | 'training'>('stats')
-  const pl = language === 'pl'
   const stats = getShipStatistics(progress, telemetry)
-  const number = (value: number, digits = 0) => value.toLocaleString(language, { maximumFractionDigits: digits })
+  const number = (value: number, digits = 0) => formatNumber(value, language, digits)
   const rows = [
-    [pl ? 'Kadłub / HP' : 'Hull / HP', `${number(stats.hull)} / ${number(stats.maximumHull)}`],
-    [pl ? 'Osłony' : 'Shields', `${number(stats.shield)} / ${number(stats.maximumShield)}`],
-    [pl ? 'Obrażenia pocisku' : 'Damage per projectile', `${stats.weapon.minimum}–${stats.weapon.maximum}`],
-    [pl ? 'Pociski w salwie' : 'Projectiles per volley', String(stats.weapon.projectilesPerVolley)],
-    [pl ? 'Teoretyczny DPS' : 'Theoretical DPS', number(stats.weapon.expectedDps, 1)],
-    [pl ? 'Szansa krytyczna' : 'Critical chance', `${stats.weapon.criticalChance * 100}% · ×${stats.weapon.criticalMultiplier}`],
-    [pl ? 'Odstęp salw' : 'Firing interval', `${number(stats.weapon.fireCooldown, 2)} s`],
-    [pl ? 'Prędkość pocisków' : 'Projectile speed', `${number(stats.weapon.projectileSpeed)} m/s`],
-    [pl ? 'Prędkość przelotowa' : 'Cruise speed', `${number(stats.maximumSpeed)} m/s`],
-    [pl ? 'Połowa mocy / Shift' : 'Half thrust / Shift', `${number(stats.halfSpeed)} m/s`],
-    [pl ? 'Aktualna prędkość' : 'Current speed', `${number(stats.speed)} m/s`],
-    [pl ? 'Ładowanie uniku' : 'Dodge recharge', `${number(stats.dodgeRemaining, 2)} / ${number(stats.dodgeCooldown, 2)} s`],
-    [pl ? 'Zwrotność' : 'Handling', `${number(100 + (stats.bonuses.handlingPercent ?? 0))}%`],
-    [pl ? 'Zasięg radaru' : 'Radar range', `${number(BASE_RADAR_RANGE * (1 + (stats.bonuses.sensorRangePercent ?? 0) / 100))} m`],
+    [gameText(language).statistics.hullHp, `${number(stats.hull)} / ${number(stats.maximumHull)}`],
+    [gameText(language).statistics.shields, `${number(stats.shield)} / ${number(stats.maximumShield)}`],
+    [gameText(language).statistics.damagePerProjectile, `${stats.weapon.minimum}–${stats.weapon.maximum}`],
+    [gameText(language).statistics.projectilesPerVolley, String(stats.weapon.projectilesPerVolley)],
+    [gameText(language).statistics.theoreticalDps, number(stats.weapon.expectedDps, 1)],
+    [gameText(language).statistics.criticalChance, `${stats.weapon.criticalChance * 100}% · ×${stats.weapon.criticalMultiplier}`],
+    [gameText(language).statistics.firingInterval, `${number(stats.weapon.fireCooldown, 2)} s`],
+    [gameText(language).statistics.projectileSpeed, `${number(stats.weapon.projectileSpeed)} m/s`],
+    [gameText(language).statistics.cruiseSpeed, `${number(stats.maximumSpeed)} m/s`],
+    [gameText(language).statistics.halfThrustShift, `${number(stats.halfSpeed)} m/s`],
+    [gameText(language).statistics.currentSpeed, `${number(stats.speed)} m/s`],
+    [gameText(language).statistics.dodgeRecharge, `${number(stats.dodgeRemaining, 2)} / ${number(stats.dodgeCooldown, 2)} s`],
+    [gameText(language).statistics.handling, `${number(100 + (stats.bonuses.handlingPercent ?? 0))}%`],
+    [gameText(language).statistics.radarRange, `${number(BASE_RADAR_RANGE * (1 + (stats.bonuses.sensorRangePercent ?? 0) / 100))} m`],
   ]
   return <div className="ship-stats-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="ship-stats-panel" role="dialog" aria-modal="true" aria-labelledby="ship-stats-title">
       <header className="ship-stats-header">
-        <div><p className="eyebrow">VANTA / {pl ? 'SYSTEMY POKŁADOWE' : 'SHIP SYSTEMS'}</p><h2 id="ship-stats-title">{pl ? 'Statystyki statku' : 'Ship statistics'}</h2></div>
-        <span className="ship-stats-level">{pl ? 'POZIOM PILOTA' : 'PILOT LEVEL'} <strong>{stats.level}</strong></span>
-        <button type="button" className="ship-stats-close" onClick={onClose} autoFocus aria-label={pl ? 'Zamknij statystyki statku' : 'Close ship statistics'} title="C / Esc">×</button>
+        <div><p className="eyebrow">{gameText(language).common.shipName} / {gameText(language).statistics.shipSystems}</p><h2 id="ship-stats-title">{gameText(language).statistics.shipStatistics}</h2></div>
+        <span className="ship-stats-level">{gameText(language).statistics.pilotLevel} <strong>{stats.level}</strong></span>
+        <IconButton icon="close" className="ship-stats-close" onClick={onClose} autoFocus label={gameText(language).statistics.closeShipStatistics} />
       </header>
-      <nav className="ship-sheet-tabs" aria-label={pl ? 'Widoki pokładu' : 'Ship views'}>
-        <button type="button" aria-pressed={view === 'stats'} onClick={() => setView('stats')}>{pl ? 'Parametry' : 'Ship stats'}</button>
-        <button type="button" aria-pressed={view === 'training'} onClick={() => setView('training')}>{pl ? 'Rozwój pilota' : 'Pilot training'}</button>
-        {onOpenInventory && <button type="button" onClick={onOpenInventory}>{pl ? 'Ekwipunek' : 'Inventory'} <kbd>I</kbd></button>}
+      <nav className="ship-sheet-tabs" aria-label={gameText(language).statistics.shipViews}>
+        <button type="button" aria-pressed={view === 'stats'} onClick={() => setView('stats')}>{gameText(language).statistics.shipStats}</button>
+        <button type="button" aria-pressed={view === 'training'} onClick={() => setView('training')}>{gameText(language).statistics.pilotTraining}</button>
+        {onOpenInventory && <IconButton icon="inventory" label={gameText(language).statistics.inventory} onClick={onOpenInventory} />}
       </nav>
       {view === 'training' ? <PilotTraining level={stats.level} learned={progress.pilotSkills} language={language} onLearn={onLearn}/>
         : <div className="ship-stats-body">
-        <section className="ship-stats-numbers" aria-label={pl ? 'Parametry statku' : 'Ship parameters'}>
-          <h3>{pl ? 'PARAMETRY LOTU I WALKI' : 'FLIGHT AND COMBAT'}</h3>
+        <section className="ship-stats-numbers" aria-label={gameText(language).statistics.shipParameters}>
+          <h3>{gameText(language).statistics.flightAndCombat}</h3>
           <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-          <p className="ship-stats-note">{pl ? 'DPS uwzględnia krytyki i dwie lufy, przed pancerzem celu. Shift utrzymuje połowę mocy, spacja pełną; otoczenie nie zmienia prędkości docelowej.' : 'DPS includes critical hits and both cannons, before target armor. Shift maintains half thrust, Space full thrust; surroundings do not change the target speed.'}</p>
+          <p className="ship-stats-note">{gameText(language).statistics.dpsIncludesCriticalHitsAndBoth}</p>
         </section>
-        <section className="ship-stats-model" aria-label={pl ? 'Twój statek' : 'Your ship'}>
+        <section className="ship-stats-model" aria-label={gameText(language).statistics.yourShip}>
           <div className="ship-stats-model-grid" aria-hidden="true" />
-          <Suspense fallback={<div className="ship-stats-loading" role="status">{pl ? 'Przygotowywanie podglądu…' : 'Preparing ship preview…'}</div>}>
-            <ShipPreviewCanvas rarities={stats.rarities} quality={quality} />
+          <Suspense fallback={<div className="ship-stats-loading" role="status">{gameText(language).statistics.preparingShipPreview}</div>}>
+            <ShipPreviewCanvas rarities={stats.rarities} quality={quality} label={gameText(language).statistics.shipPreview} hullFraction={stats.hull / stats.maximumHull} />
           </Suspense>
-          <div className="ship-stats-model-caption"><strong>VANTA</strong><span>{pl ? 'AKTUALNE WYPOSAŻENIE' : 'CURRENT LOADOUT'}</span></div>
+          <div className="ship-stats-model-caption"><strong>{gameText(language).common.shipName}</strong><span>{gameText(language).statistics.currentLoadout}</span></div>
         </section>
-        <section className="ship-stats-loadout" aria-label={pl ? 'Wyposażenie i odporności' : 'Equipment and resistances'}>
+        <section className="ship-stats-loadout" aria-label={gameText(language).statistics.equipmentAndResistances}>
           <ShipResistanceReadout resistances={stats.resistances} language={language} collapsible={false} />
-          <h3>{pl ? 'ZAMONTOWANE MODUŁY' : 'INSTALLED MODULES'}</h3>
+          <h3>{gameText(language).statistics.installedModules}</h3>
           {SHIP_PART_SLOTS.map(slot => {
             const part = progress.shipParts.find(item => item.id === progress.equippedParts[slot] && item.slot === slot)
-            return <article key={slot} className={`ship-stats-module${part ? ` rarity-${part.rarity}` : ''}`} title={part ? getShipPartStatSummary(part, language) : undefined}>
+            return <article key={slot} className={`ship-stats-module${part ? ` rarity-${part.rarity}` : ''}`} data-tooltip={part ? getShipPartStatSummary(part, language) : undefined}>
               <PartArtwork slot={slot} rarity={part?.rarity ?? 'standard'} />
-              <div><strong>{getShipPartSlotLabel(language, slot)}</strong><span>{part ? getShipPartRarityLabel(language, part.rarity) : (pl ? 'Wyposażenie fabryczne' : 'Factory equipment')}</span>
+              <div><strong>{getShipPartSlotLabel(language, slot)}</strong><span>{part ? getShipPartRarityLabel(language, part.rarity) : (gameText(language).statistics.factoryEquipment)}</span>
                 {part && <small>{getShipPartStatSummary(part, language)}</small>}</div>
             </article>
           })}
         </section>
       </div>}
-      <footer className="ship-stats-footer">{pl ? 'C / ESC · ZAMKNIJ' : 'C / ESC · CLOSE'}</footer>
     </section>
   </div>
 }

@@ -1,3 +1,4 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import type { GalaxyWorld, SectorPosition } from '../domain/exploration'
 
@@ -33,9 +34,8 @@ export function SectorChart({ world, position, target, language }: {
   world: GalaxyWorld
   position: SectorPosition
   target: SectorPosition | null | undefined
-  language: 'pl' | 'en'
+  language: GameLanguage
 }) {
-  const pl = language === 'pl'
   const [view, setView] = useState(WHOLE_SECTOR)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
   const [dragging, setDragging] = useState(false)
@@ -114,7 +114,7 @@ export function SectorChart({ world, position, target, language }: {
 
   return <div className="journal-star-chart">
     <svg ref={svgRef} viewBox={`0 0 ${WIDTH} ${height}`} className={dragging ? 'is-dragging' : undefined} tabIndex={0}
-      role="group" aria-label={pl ? 'Interaktywna mapa sektora' : 'Interactive sector map'}
+      role="group" aria-label={gameText(language).chart.interactiveSectorMap}
       onPointerDown={startDrag} onPointerMove={drag} onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}
       onKeyDown={useKeyboard}>
       <defs>
@@ -147,15 +147,14 @@ export function SectorChart({ world, position, target, language }: {
         </path>
         {destination && <circle cx={destination.x} cy={destination.y} r={7 * radius} className="chart-target"/>}
         <path d="M0 -6L-4 5L0 3L4 5Z" transform={`translate(${pilot.x} ${pilot.y}) scale(${radius})`} className="chart-pilot">
-          <title>{pl ? 'Twój statek' : 'Your ship'}</title>
+          <title>{gameText(language).chart.yourShip}</title>
         </path>
       </g>
     </svg>
     <div className="journal-chart-tools">
-      <span>{pl ? 'Rolka i przeciąganie' : 'Scroll and drag'}</span>
-      <button type="button" onClick={() => zoomFromCenter(1 / 1.45)} disabled={view.zoom === 1} aria-label={pl ? 'Oddal mapę' : 'Zoom out'}>−</button>
-      <button type="button" onClick={() => setView(WHOLE_SECTOR)} disabled={view.zoom === 1} aria-label={pl ? 'Resetuj widok mapy' : 'Reset map view'}>{Number(view.zoom.toFixed(1))}×</button>
-      <button type="button" onClick={() => zoomFromCenter(1.45)} disabled={view.zoom === MAX_ZOOM} aria-label={pl ? 'Przybliż mapę' : 'Zoom in'}>+</button>
+      <button type="button" onClick={() => zoomFromCenter(1 / 1.45)} disabled={view.zoom === 1} aria-label={gameText(language).chart.zoomOut} data-tooltip={gameText(language).chart.zoomOut}>−</button>
+      <button type="button" onClick={() => setView(WHOLE_SECTOR)} disabled={view.zoom === 1} aria-label={gameText(language).chart.resetMapView} data-tooltip={gameText(language).chart.resetMapView}>{Number(view.zoom.toFixed(1))}×</button>
+      <button type="button" onClick={() => zoomFromCenter(1.45)} disabled={view.zoom === MAX_ZOOM} aria-label={gameText(language).chart.zoomIn} data-tooltip={gameText(language).chart.zoomIn}>+</button>
     </div>
   </div>
 }

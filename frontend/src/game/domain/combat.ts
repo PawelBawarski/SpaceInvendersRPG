@@ -19,6 +19,7 @@ export const DODGE_TIMING = {
   cooldown: 0.65,
   perfectWindow: 0.12,
 } as const
+export const DODGE_DURATION = DODGE_TIMING.startup + DODGE_TIMING.iframes + DODGE_TIMING.recovery
 
 export function getDodgePhase(elapsed: number): DodgeState {
   if (elapsed < DODGE_TIMING.startup) {
@@ -27,7 +28,7 @@ export function getDodgePhase(elapsed: number): DodgeState {
   if (elapsed < DODGE_TIMING.startup + DODGE_TIMING.iframes) {
     return { state: 'dodgeIframes', elapsed }
   }
-  if (elapsed < DODGE_TIMING.startup + DODGE_TIMING.iframes + DODGE_TIMING.recovery) {
+  if (elapsed < DODGE_DURATION) {
     return { state: 'dodgeRecovery', elapsed }
   }
   return { state: 'idle', elapsed }

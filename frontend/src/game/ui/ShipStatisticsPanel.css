@@ -30,7 +30,6 @@
 .ship-stats-module small { color: #a9c8da; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .ship-stats-module.rarity-refined { border-color: #395f87; }
 .ship-stats-module.rarity-prototype { border-color: #73528e; }
-.ship-stats-footer { border-top: 1px solid #253a48; padding: 10px 24px; color: #acc9db; font-size: 11px; letter-spacing: .05em; }
 .ship-sheet-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 24px; border-bottom: 1px solid #253a48; }
 .ship-sheet-tabs button[aria-pressed='true'] { border-color: #91d0db; background: #1b3542; color: #f0f9fc; }
 .ship-sheet-tabs button:last-child:not([aria-pressed]) { margin-left: auto; }

@@ -5,7 +5,7 @@ import {
   Scene,
   TransformNode,
   Vector3,
-} from '@babylonjs/core'
+} from './babylon'
 import { createSceneMaterial } from './sectorDepth'
 
 export function createImpactEffect(

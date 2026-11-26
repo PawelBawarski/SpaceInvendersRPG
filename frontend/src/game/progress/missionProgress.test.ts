@@ -59,9 +59,12 @@ describe('mission progress', () => {
   it('starts from an empty save', () => {
     expect(loadMissionProgress()).toEqual({
       worldSeed: 0,
+      orionLayoutVersion: 2,
       prologueComplete: true,
+      initialRepairRequired: false,
       repairMask: 0,
       orbitPlanetId: null,
+      recoveryStationId: null,
       droneRespawns: {},
       shipVitals: null,
       completedMissions: [],

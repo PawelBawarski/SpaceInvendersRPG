@@ -1,3 +1,4 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { createPlanetLandscape } from './PlanetLandscape'
 import { useEffect, useRef } from 'react'
 import {
@@ -8,6 +9,7 @@ import {
   FreeCamera,
   GlowLayer,
   HemisphericLight,
+  ImageProcessingConfiguration,
   MeshBuilder,
   PointLight,
   Scene,
@@ -16,12 +18,14 @@ import {
   StandardMaterial,
   TransformNode,
   Vector3,
-} from '@babylonjs/core'
+} from './babylon'
 import { SHIP_PART_SLOTS, type EquippedPartRarities } from '../progress/shipParts'
 import type { GraphicsSettings } from '../progress/gameSettings'
 import { HANGAR_CREW, type HangarCrewMember } from '../hangar/crew'
 import type { PlanetSite } from '../domain/exploration'
 import { createShipVisual, setShipDrivePower, type ShipDrive } from './shipVisual'
+import { showHullDamage } from './HullDamage'
+import { createHangarRepair } from './HangarRepair'
 import { createPlanetVisual } from './spaceEnvironment'
 import { HANGAR_DEPARTURE_DURATION, HANGAR_LANDING_DURATION, sampleHangarDeparture } from '../simulation/StationApproach'
 import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY, sampleDepartureCompression, sampleDepartureLandingGear, sampleHangarLanding, type HangarLandingStage } from '../simulation/HangarLanding'
@@ -29,10 +33,13 @@ import { createLandingGear } from './LandingGear'
 import { getHardwareScaling, spaceEffectsProfile } from './spaceEffectsProfile'
 
 interface GarageCanvasProps {
+  language: GameLanguage
   surfacePlanet?: PlanetSite
   previewPlanet: PlanetSite
   graphics: GraphicsSettings
   equippedPartRarities: EquippedPartRarities
+  hullFraction: number
+  startsLanded?: boolean
   entering?: boolean
   paused?: boolean
   departing?: boolean
@@ -43,14 +50,15 @@ interface GarageCanvasProps {
   onDeparted?: () => void
 }
 
-export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedPartRarities, entering = true, paused = false, departing = false, departureReady = false, onReady, onLanded, onLandingStageChange, onDeparted }: GarageCanvasProps) {
+export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics, equippedPartRarities, hullFraction, startsLanded = false, entering = true, paused = false, departing = false, departureReady = false, onReady, onLanded, onLandingStageChange, onDeparted }: GarageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const enteringRef = useRef(entering)
   const pausedRef = useRef(paused)
   const onReadyRef = useRef(onReady)
   const onLandedRef = useRef(onLanded)
   const onLandingStageRef = useRef(onLandingStageChange)
-  const hasLandedRef = useRef(false)
+  const hasLandedRef = useRef(startsLanded)
+  const hullRef = useRef(hullFraction)
   const departureRef = useRef({ departing, ready: departureReady, onDeparted })
   useEffect(() => {
     enteringRef.current = entering
@@ -60,6 +68,7 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
     onLandingStageRef.current = onLandingStageChange
     departureRef.current = { departing, ready: departureReady, onDeparted }
   }, [entering, paused, onReady, onLanded, onLandingStageChange, departing, departureReady, onDeparted])
+  useEffect(() => { hullRef.current = hullFraction }, [hullFraction])
   const weaponRarity = equippedPartRarities.weapon
   const shieldRarity = equippedPartRarities.shield
   const engineRarity = equippedPartRarities.engine
@@ -75,26 +84,31 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
     engine.setHardwareScalingLevel(getHardwareScaling(graphics))
     const scene = new Scene(engine)
     scene.clearColor = new Color4(0.004, 0.009, 0.018, 1)
+    scene.imageProcessingConfiguration.toneMappingEnabled = true
+    scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
+    scene.imageProcessingConfiguration.contrast = 1.14
 
     const camera = new FreeCamera('hangarCamera', new Vector3(3.4, 3.1, -16), scene)
     camera.minZ = 0.1
-    camera.setTarget(new Vector3(3, 0.4, 4))
+    camera.setTarget(hasLandedRef.current ? new Vector3(1.5, .4, 3) : new Vector3(3, .4, 4))
 
     const ambient = new HemisphericLight('hangarAmbient', new Vector3(0, 1, 0), scene)
     ambient.diffuse = new Color3(0.61, 0.76, 0.89)
     ambient.groundColor = new Color3(0.06, 0.09, 0.14)
-    ambient.intensity = 0.31
-    const keyLight = new PointLight('hangarKeyLight', new Vector3(-9.9, 4.68, 1), scene)
+    ambient.intensity = .31
+    const keyLight = new PointLight('hangarKeyLight', new Vector3(-8.6, 4.68, -2.1), scene)
     keyLight.diffuse = new Color3(0.58, 0.82, 1)
     keyLight.range = 18
-    keyLight.intensity = 0.74
+    keyLight.intensity = .84
     const rimLight = new PointLight('hangarRimLight', new Vector3(9.9, 4.68, 1), scene)
     rimLight.diffuse = new Color3(1, 0.64, 0.35)
     rimLight.range = 18
-    rimLight.intensity = 0.64
+    rimLight.intensity = .72
     const padLight = new SpotLight('hangarPadLight', new Vector3(-3, 7.8, 2), new Vector3(0.31, -1, -0.06), 1.2, 2, scene)
     padLight.diffuse = new Color3(0.8, 0.92, 1)
-    padLight.intensity = 1.24
+    padLight.intensity = 1.43
+    padLight.range = 19
+    padLight.renderPriority = 2
     const quality = graphics.graphicsQuality
     const shadows = graphics.hangarShadows ? new ShadowGenerator(quality === 'low' ? 512 : quality === 'high' ? 1536 : 1024, padLight) : null
     if (shadows) {
@@ -170,11 +184,17 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
     canvas.dataset.gearDeployment = hasLandedRef.current ? '1.000' : '0.000'
     canvas.dataset.gearCompression = hasLandedRef.current ? LANDING_GEAR_GEOMETRY.loadedCompression.toFixed(4) : '0.0000'
     canvas.dataset.landingStage = hasLandedRef.current ? 'landed' : 'approach'
-    for (const mesh of ship.getChildMeshes()) if (!mesh.name.startsWith('shipEngineExhaust')) shadows?.addShadowCaster(mesh)
-    const crew = HANGAR_CREW.map((member) => createHangarCrewMember(scene, member))
-    for (const member of crew) for (const mesh of member.getChildMeshes()) {
-      if (!mesh.name.includes('HoverRing')) shadows?.addShadowCaster(mesh)
+    if (hasLandedRef.current) {
+      canvas.dataset.landingState = 'landed'
+      canvas.dataset.landingProgress = '1.000'
     }
+    for (const mesh of ship.getChildMeshes()) {
+      if (!/^(shipEngineExhaust|hull-damage-)/.test(mesh.name)) shadows?.addShadowCaster(mesh)
+    }
+    const crew = HANGAR_CREW.map((member) => createHangarCrewMember(scene, member))
+    const technician = crew.find(member => member.name === 'hangarCrew-k-7')
+    const animateRepair = technician && createHangarRepair(scene, technician, ship)
+    for (const member of crew) if (member !== technician) for (const mesh of member.getChildMeshes()) shadows?.addShadowCaster(mesh)
     const shadowMap = shadows?.getShadowMap()
     if (shadowMap) shadowMap.refreshRate = hasLandedRef.current ? 0 : 1
     let idleElapsed = 0
@@ -187,6 +207,7 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
     const drive = ship.metadata.drive as ShipDrive
     let landingStage: HangarLandingStage = hasLandedRef.current ? 'landed' : 'approach'
     scene.onBeforeRenderObservable.add(() => {
+      showHullDamage(ship, hullRef.current)
       const dt = Math.min(engine.getDeltaTime() / 1000, 0.1)
       idleElapsed += dt
       const transit = departureRef.current.departing || !hasLandedRef.current
@@ -242,9 +263,13 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
           onLandedRef.current?.()
         }
       }
+      const repairing = hasLandedRef.current && !departureRef.current.departing && hullRef.current < 1
+      animateRepair?.(dt, idleElapsed, repairing, camera.position)
+      const repairPhase = repairing ? 'working' : 'idle'
+      if (canvas.dataset.repairDrone !== repairPhase) canvas.dataset.repairDrone = repairPhase
       crew.forEach((member, index) => {
-        const hover = HANGAR_CREW[index].species === 'robot'
-        member.position.y = -1.08 + Math.sin(idleElapsed * (hover ? 2.2 : 1.3) + index * 1.7) * (hover ? .095 : .026)
+        if (member === technician) return
+        member.position.y = -1.08 + Math.sin(idleElapsed * 1.3 + index * 1.7) * .026
         const facing = Math.atan2(camera.position.x - member.position.x, camera.position.z - member.position.z)
         member.rotation.y = facing + (index % 3 - 1) * .15 + Math.sin(idleElapsed * .62 + index) * .065
       })
@@ -271,7 +296,7 @@ export function GarageCanvas({ surfacePlanet, previewPlanet, graphics, equippedP
     <canvas
       ref={canvasRef}
       className="garage-world"
-      aria-label="Parked ship in a planetary hangar"
+      aria-label={gameText(language).garageScene.view}
       data-equipped-parts={SHIP_PART_SLOTS.filter((slot) => equippedPartRarities[slot]).join(',')}
     />
   )

@@ -1,6 +1,55 @@
-import { Color3, DynamicTexture, Mesh, MeshBuilder, Scene, StandardMaterial, VertexData } from '@babylonjs/core'
+import { Color3, DynamicTexture, Mesh, MeshBuilder, Scene, StandardMaterial, VertexData } from './babylon'
 import type { PlanetSite } from '../domain/exploration'
 import type { GraphicsQuality } from '../progress/gameSettings'
+
+const REGOLITH_REPEAT_METERS = 13
+
+function mineralNoise(u: number, v: number, cells: number, seed: number) {
+  const x = u * cells
+  const y = v * cells
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const dx = x - ix
+  const dy = y - iy
+  const blendX = dx * dx * (3 - 2 * dx)
+  const blendY = dy * dy * (3 - 2 * dy)
+  const grain = (column: number, row: number) => {
+    const number = Math.imul(column % cells + seed, 1597334677) ^ Math.imul(row % cells, 3812015801)
+    return (Math.imul(number ^ (number >>> 15), 2246822519) >>> 0) / 0xffffffff
+  }
+  const top = grain(ix, iy) * (1 - blendX) + grain(ix + 1, iy) * blendX
+  const bottom = grain(ix, iy + 1) * (1 - blendX) + grain(ix + 1, iy + 1) * blendX
+  return top * (1 - blendY) + bottom * blendY
+}
+
+function createRegolithTexture(scene: Scene, planetId: string, quality: GraphicsQuality) {
+  const dimension = quality === 'low' ? 128 : 256
+  const texture = new DynamicTexture('regolithGrain', dimension, scene, true)
+  texture.anisotropicFilteringLevel = quality === 'low' ? 2 : 4
+  const seed = [...planetId].reduce((sum, character) => (Math.imul(sum, 31) + character.charCodeAt(0)) | 0, 17)
+  const context = texture.getContext()
+  const tile = context.getImageData(0, 0, dimension, dimension)
+  for (let y = 0; y < dimension; y++) {
+    for (let x = 0; x < dimension; x++) {
+      const u = x / dimension
+      const v = y / dimension
+      const bedrock = mineralNoise(u, v, 5, seed)
+      const chips = mineralNoise(u, v, 27, seed + 17)
+      const fine = mineralNoise(u, v, dimension, seed + 31)
+      const fault = Math.abs(mineralNoise(u, v, 11, seed + 7) + chips * .08 - .53)
+      const crack = Math.max(0, 1 - fault / .021)
+      const brightness = 140 + bedrock * 58 + chips * 37 + fine * 19 - crack * 37
+      const pixel = (y * dimension + x) * 4
+      tile.data[pixel] = brightness
+      tile.data[pixel + 1] = brightness
+      tile.data[pixel + 2] = brightness
+      tile.data[pixel + 3] = 255
+    }
+  }
+  context.putImageData(tile, 0, 0)
+  texture.update()
+  return texture
+}
 
 /** Shared local terrain for the mechanic prologue and surface hangars. */
 export function createPlanetLandscape(scene: Scene, planet: PlanetSite, quality: GraphicsQuality) {
@@ -11,6 +60,8 @@ export function createPlanetLandscape(scene: Scene, planet: PlanetSite, quality:
   scene.fogColor = Color3.Lerp(Color3.FromHexString('#293a49'), color, .13)
   const groundMaterial = new StandardMaterial('surfaceGroundMaterial', scene)
   groundMaterial.diffuseColor = Color3.White()
+  const regolith = createRegolithTexture(scene, planet.id, quality)
+  groundMaterial.diffuseTexture = regolith
   groundMaterial.emissiveColor = color.scale(0.025)
   groundMaterial.specularColor = Color3.Black()
   const ground = createSurfaceRelief(scene, color, quality)
@@ -56,7 +107,7 @@ export function createPlanetLandscape(scene: Scene, planet: PlanetSite, quality:
   moon.isPickable = false
   moon.freezeWorldMatrix()
   scene.metadata = { ...scene.metadata, surfacePlanetId: planet.id }
-  return { ground, sky }
+  return { ground, sky, regolith }
 }
 
 function createSurfaceRelief(scene: Scene, tint: Color3, quality: GraphicsQuality) {
@@ -65,6 +116,7 @@ function createSurfaceRelief(scene: Scene, tint: Color3, quality: GraphicsQualit
   const base = Color3.Lerp(Color3.FromHexString('#273745'), tint, .31)
   const floor = -1.15
   const vertices = [0, floor, 0]
+  const uv = [0, 0]
   const colors = [base.r, base.g, base.b, 1]
   const triangles: number[] = []
   const crest = (radius: number, middle: number, width: number) => Math.exp(-(((radius - middle) / width) ** 2))
@@ -81,6 +133,7 @@ function createSurfaceRelief(scene: Scene, tint: Color3, quality: GraphicsQualit
       const relief = radius <= 8 ? 0 : Math.min(1, (radius - 8) / 32) * (waves * 1.95 + foothill + summit + farRidge)
       const shade = .86 + waves * .19 + Math.max(0, relief) * .002
       vertices.push(x, floor + relief, z)
+      uv.push(x / REGOLITH_REPEAT_METERS, z / REGOLITH_REPEAT_METERS)
       colors.push(base.r * shade, base.g * shade, base.b * shade, 1)
       const a = 1 + ring * sides + side
       const next = 1 + ring * sides + (side + 1) % sides
@@ -94,6 +147,7 @@ function createSurfaceRelief(scene: Scene, tint: Color3, quality: GraphicsQualit
   data.positions = vertices
   data.indices = triangles
   data.normals = normals
+  data.uvs = uv
   data.colors = colors
   const ground = new Mesh('planetSurfaceGround', scene)
   data.applyToMesh(ground)

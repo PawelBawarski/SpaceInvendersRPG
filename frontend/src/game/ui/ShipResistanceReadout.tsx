@@ -1,14 +1,15 @@
+import { formatText, gameText, type GameLanguage } from '../i18n'
 import { DAMAGE_TYPES, DAMAGE_TYPE_LABELS, getDamageResistance, MAX_DAMAGE_RESISTANCE, type ResistanceProfile } from '../domain/damageTypes'
 import './ShipResistanceReadout.css'
 
 interface ShipResistanceReadoutProps {
   resistances: ResistanceProfile
-  language: 'pl' | 'en'
+  language: GameLanguage
   collapsible?: boolean
 }
 
 export function ShipResistanceReadout({ resistances, language, collapsible = true }: ShipResistanceReadoutProps) {
-  const title = language === 'pl' ? 'Odporności statku' : 'Ship resistances'
+  const title = gameText(language).resistance.shipResistances
   const summary = DAMAGE_TYPES.map(type => `${DAMAGE_TYPE_LABELS[type][language]}: ${Math.round(getDamageResistance(type, resistances) * 100)}%`).join(' · ')
   const values = <dl className="ship-resistance-values">
     {DAMAGE_TYPES.map(type => {
@@ -21,6 +22,6 @@ export function ShipResistanceReadout({ resistances, language, collapsible = tru
   </dl>
 
   return collapsible
-    ? <details className="ship-resistance-readout"><summary title={summary}><span>{title}</span><small>{language === 'pl' ? '4 typy' : '4 types'}</small></summary>{values}</details>
+    ? <details className="ship-resistance-readout"><summary data-tooltip={summary}><span>{title}</span><small>{formatText(gameText(language).resistance.typeCount, { count: DAMAGE_TYPES.length })}</small></summary>{values}</details>
     : <section className="ship-resistance-readout" aria-label={title}><strong className="ship-resistance-title">{title}</strong>{values}</section>
 }

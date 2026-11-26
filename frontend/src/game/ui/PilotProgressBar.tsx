@@ -1,19 +1,20 @@
+import { gameText, type GameLanguage } from '../i18n'
 import { getPilotExperienceProgress } from '../progress/missionProgress'
 
 interface PilotProgressBarProps {
   experience: number
-  language: 'pl' | 'en'
+  language: GameLanguage
 }
 
 export function PilotProgressBar({ experience, language }: PilotProgressBarProps) {
   const progress = getPilotExperienceProgress(experience)
   const percent = progress.experienceIntoLevel / progress.experienceToNextLevel * 100
-  const title = language === 'pl' ? 'Postęp pilota' : 'Pilot progress'
+  const title = gameText(language).pilotProgress.pilotProgress
 
   return (
     <aside className="pilot-progress" aria-label={title}>
       <strong className="pilot-progress-level">
-        {language === 'pl' ? 'POZ.' : 'LV'} {progress.level}
+        {gameText(language).pilotProgress.lv} {progress.level}
       </strong>
       <div
         className="pilot-progress-track"

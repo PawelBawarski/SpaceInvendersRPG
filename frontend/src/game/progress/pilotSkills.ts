@@ -1,11 +1,12 @@
+import { localizedText } from '../i18n'
 export const PILOT_SKILLS = [
-  { id: 'flight-trim', track: 'flight', level: 2, requires: null, name: { pl: 'Precyzyjne stery', en: 'Flight trim' }, detail: { pl: '+14% zwrotności', en: '+14% handling' } },
-  { id: 'vector-dodge', track: 'flight', level: 3, requires: 'flight-trim', name: { pl: 'Unik wektorowy', en: 'Vector dodge' }, detail: { pl: 'Unik odnowi się o 25% szybciej', en: '25% shorter dodge cooldown' } },
-  { id: 'overdrive', track: 'flight', level: 5, requires: 'flight-trim', name: { pl: 'Przeciążenie napędu', en: 'Drive overcharge' }, detail: { pl: '+35% maksymalnej prędkości na 3 s. Odnowienie 14 s', en: '+35% top speed for 3 s. Cooldown 14 s' } },
-  { id: 'targeting', track: 'combat', level: 2, requires: null, name: { pl: 'Korekta ognia', en: 'Fire correction' }, detail: { pl: '+8% obrażeń uzbrojenia', en: '+8% weapon damage' } },
-  { id: 'impact-bracing', track: 'combat', level: 4, requires: 'targeting', name: { pl: 'Manewr osłonowy', en: 'Impact bracing' }, detail: { pl: '+10% odporności kinetycznej', en: '+10% kinetic resistance' } },
-  { id: 'long-scan', track: 'systems', level: 2, requires: null, name: { pl: 'Daleki nasłuch', en: 'Long scan' }, detail: { pl: '+40% zasięgu radaru', en: '+40% radar range' } },
-  { id: 'field-repair', track: 'systems', level: 3, requires: 'long-scan', name: { pl: 'Wzmocnione poszycie', en: 'Reinforced plating' }, detail: { pl: '+14 HP kadłuba', en: '+14 hull HP' } },
+  { id: 'flight-trim', track: 'flight', level: 2, requires: null, name: localizedText(text => text.pilotSkills.flightTrim), detail: localizedText(text => text.pilotSkills.flightTrimDetail) },
+  { id: 'vector-dodge', track: 'flight', level: 3, requires: 'flight-trim', name: localizedText(text => text.pilotSkills.vectorDodge), detail: localizedText(text => text.pilotSkills.vectorDodgeDetail) },
+  { id: 'overdrive', track: 'flight', level: 5, requires: 'flight-trim', name: localizedText(text => text.pilotSkills.overdrive), detail: localizedText(text => text.pilotSkills.overdriveDetail) },
+  { id: 'targeting', track: 'combat', level: 2, requires: null, name: localizedText(text => text.pilotSkills.targeting), detail: localizedText(text => text.pilotSkills.targetingDetail) },
+  { id: 'impact-bracing', track: 'combat', level: 4, requires: 'targeting', name: localizedText(text => text.pilotSkills.impactBracing), detail: localizedText(text => text.pilotSkills.impactBracingDetail) },
+  { id: 'long-scan', track: 'systems', level: 2, requires: null, name: localizedText(text => text.pilotSkills.longScan), detail: localizedText(text => text.pilotSkills.longScanDetail) },
+  { id: 'field-repair', track: 'systems', level: 3, requires: 'long-scan', name: localizedText(text => text.pilotSkills.fieldRepair), detail: localizedText(text => text.pilotSkills.fieldRepairDetail) },
 ] as const
 
 export type PilotSkill = (typeof PILOT_SKILLS)[number]

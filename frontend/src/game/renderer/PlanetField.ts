@@ -1,4 +1,4 @@
-import { Color3, Constants, DynamicTexture, FresnelParameters, GlowLayer, Mesh, MeshBuilder, Scene, Vector3 } from '@babylonjs/core'
+import { Color3, Constants, DynamicTexture, FresnelParameters, GlowLayer, Mesh, MeshBuilder, Scene, Vector3 } from './babylon'
 import type { PlanetSite } from '../domain/exploration'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import { createPlanetVisual } from './spaceEnvironment'

@@ -9,13 +9,14 @@ import {
   TransformNode,
   Vector3,
   VertexData,
-} from '@babylonjs/core'
+} from './babylon'
 import {
   SHIP_PART_RARITY_COLORS,
   type EquippedPartRarities,
 } from '../progress/shipParts'
 import { createSceneMaterial } from './sectorDepth'
 import { createProfiledHull } from './ProfiledHull'
+import { addHullScars, VANTA_SCARS } from './HullDamage'
 
 type Footprint = readonly (readonly [number, number])[]
 type Point3 = readonly [number, number, number]
@@ -53,6 +54,7 @@ export function setShipDrivePower(drive: ShipDrive, power: number, elapsed: numb
 export function createShipVisual(scene: Scene, rarityBySlot: EquippedPartRarities): TransformNode {
   const ship = new TransformNode('playerShip', scene)
   ship.metadata = { equippedPartRarities: Object.fromEntries(Object.entries(rarityBySlot).filter(([, rarity]) => rarity)) }
+  addHullScars(ship, VANTA_SCARS)
   const hull = createMetal(scene, 'shipCeramicArmor', '#b7d0df', 0.10)
   const dark = createMetal(scene, 'shipGraphiteFrame', '#182936', 0.06)
   const inset = createMetal(scene, 'shipInsetArmor', '#456477', 0.045)
@@ -151,10 +153,11 @@ export function createShipVisual(scene: Scene, rarityBySlot: EquippedPartRaritie
     ], 0.005, 0.11, hull)
     plate(`shipWingInset${side}`, [
       [side * 1.05, -0.14], [side * 1.89, -0.61], [side * 1.73, -0.74], [side * 0.94, -0.51],
-    ], 0.115, 0.13, inset)
-    plate(`shipWingReinforcement${side}`, [
+    ], 0.115, 0.13, inset).metadata = { breakawayStage: side < 0 ? 3 : 2 }
+    const wingReinforcement = plate(`shipWingReinforcement${side}`, [
       [side * .92, .13], [side * 2.12, -.54], [side * 1.96, -.63], [side * .89, -.04],
     ], .113, .158, hull)
+    if (side < 0) wingReinforcement.metadata = { breakawayStage: 3 }
     const wingMark = detail(`shipWingIdentification${side}`, [0.09, 0.018, 0.34], [side * 1.7, 0.145, -0.59], amber)
     wingMark.rotation.y = side * -0.45
     detail(`shipWingNavigation${side}`, [0.09, 0.08, 0.2], [side * 2.18, 0.02, -0.64], side < 0 ? amber : cyan)

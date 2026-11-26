@@ -1,10 +1,10 @@
-import { Color3, MeshBuilder, Scene, Vector3 } from '@babylonjs/core'
+import { Color3, MeshBuilder, Scene, Vector3 } from './babylon'
 import { createSceneMaterial } from './sectorDepth'
 
 const STAR_COLORS = [
-  { name: 'blue', diffuse: '#a8d7f0', emissive: '#8bcfff' },
-  { name: 'gold', diffuse: '#f4c27a', emissive: '#f7ad54' },
-  { name: 'white', diffuse: '#dcecff', emissive: '#b9d6ff' },
+  { name: 'blue', emissive: '#8bcfff' },
+  { name: 'gold', emissive: '#f7ad54' },
+  { name: 'white', emissive: '#b9d6ff' },
 ] as const
 
 export function createSectorStarField(scene: Scene, count: number, center: Vector3) {
@@ -13,8 +13,9 @@ export function createSectorStarField(scene: Scene, count: number, center: Vecto
     if (batchCount <= 0) return []
 
     const material = createSceneMaterial(`sector${color.name}StarMaterial`, scene)
-    material.diffuseColor = Color3.FromHexString(color.diffuse)
-    material.emissiveColor = Color3.FromHexString(color.emissive).scale(0.24)
+    material.disableLighting = true
+    material.diffuseColor = Color3.Black()
+    material.emissiveColor = Color3.FromHexString(color.emissive).scale(.19)
     const mesh = MeshBuilder.CreateSphere(`sectorStarBatch-${color.name}`, { diameter: 1, segments: 4 }, scene)
     mesh.material = material
     mesh.isPickable = false

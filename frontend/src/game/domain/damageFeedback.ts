@@ -1,8 +1,9 @@
+import { type LocalizedText } from '../i18n'
 import type { SectorPosition } from './exploration'
 
 export interface DamageSource {
   position: SectorPosition
-  label: { pl: string; en: string }
+  label: LocalizedText
   kind: 'weapon' | 'collision' | 'heat'
   impact?: { position: SectorPosition; normal: SectorPosition }
 }

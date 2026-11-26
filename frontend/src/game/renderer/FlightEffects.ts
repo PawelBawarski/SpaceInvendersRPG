@@ -10,7 +10,7 @@ import {
   TransformNode,
   Vector3,
   VertexBuffer,
-} from '@babylonjs/core'
+} from './babylon'
 import type { GraphicsQuality, GraphicsSettings } from '../progress/gameSettings'
 import { setShipDrivePower, type ShipDrive } from './shipVisual'
 import { spaceEffectsProfile } from './spaceEffectsProfile'

@@ -1,4 +1,4 @@
-import { Color3, FreeCamera, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from '@babylonjs/core'
+import { Color3, FreeCamera, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from './babylon'
 import { ALL_HANGARS, type SectorPosition, type StationSite } from '../domain/exploration'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import { advanceDockingProgress, canDockAt, DEPARTURE_DURATION, dockingFade, forwardRotation, getStationApproachStage, sampleStationApproach, sampleStationDeparture } from '../simulation/StationApproach'
