@@ -1,7 +1,7 @@
 import { formatText, gameText, type GameLanguage } from '../i18n'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FIRST_FLIGHT_VITALS } from '../domain/shipTelemetry'
-import { RECOVERY_CIRCUIT_TURNS, RECOVERY_COMPLETE_MASK, RECOVERY_IGNITION, RECOVERY_REACTOR, RECOVERY_TASK, RECOVERY_TASKS } from '../simulation/ShipRecovery'
+import { createRecoveryChallenge, RECOVERY_CIRCUIT_TURNS, RECOVERY_COMPLETE_MASK, RECOVERY_IGNITION, RECOVERY_REACTOR, RECOVERY_TASK, RECOVERY_TASKS } from '../simulation/ShipRecovery'
 
 const nextTask = (mask: number) => RECOVERY_TASKS.find(index => !(mask & 1 << index)) ?? RECOVERY_TASK.circuits
 const CIRCUIT_ORIENTATIONS = 4
@@ -11,6 +11,18 @@ const CIRCUIT_TRACES = ['M9 51H20', 'M54 85V109H111V51H130', 'M164 85V109H221V51
 const OSCILLOSCOPE_WIDTH = 240
 const OSCILLOSCOPE_STEPS = 64
 const REACTOR_SAMPLE_MS = 45
+const IGNITION_SAMPLE_MS = 45
+
+function ignitionArc(target: number) {
+  const start = -Math.PI / 2 + target - RECOVERY_IGNITION.toleranceRadians
+  const end = -Math.PI / 2 + target + RECOVERY_IGNITION.toleranceRadians
+  const radius = 44
+  const x1 = 60 + Math.cos(start) * radius
+  const y1 = 60 + Math.sin(start) * radius
+  const x2 = 60 + Math.cos(end) * radius
+  const y2 = 60 + Math.sin(end) * radius
+  return `M 60 60 L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`
+}
 
 function reactorWave(voltage: number, frequency: number) {
   const amplitude = voltage * .44
@@ -20,51 +32,55 @@ function reactorWave(voltage: number, frequency: number) {
   }).join(' ')
 }
 
-const referenceWave = reactorWave((RECOVERY_REACTOR.voltage.min + RECOVERY_REACTOR.voltage.max) / 2,
-  (RECOVERY_REACTOR.frequency.min + RECOVERY_REACTOR.frequency.max) / 2)
-
-export function LaunchDiagnostics({ mask, language, onRepair, onLaunch }: {
-  mask: number; language: GameLanguage; onRepair: (mask: number) => void; onLaunch: () => void
+export function LaunchDiagnostics({ mask, language, seed, onRepair, onLaunch }: {
+  mask: number; language: GameLanguage; seed: number; onRepair: (mask: number) => void; onLaunch: () => void
 }) {
+  const challenge = useMemo(() => createRecoveryChallenge(seed), [seed])
+  const referenceWave = useMemo(() => reactorWave((challenge.voltage.min + challenge.voltage.max) / 2,
+    (challenge.frequency.min + challenge.frequency.max) / 2), [challenge])
   const text = gameText(language).diagnostics
   const { labels, titles } = text
   const [task, setTask] = useState<number>(() => nextTask(mask))
   const [rotations, setRotations] = useState<number[]>(() => [...RECOVERY_CIRCUIT_TURNS])
-  const [voltage, setVoltage] = useState<number>(RECOVERY_REACTOR.voltage.initial)
-  const [frequency, setFrequency] = useState<number>(RECOVERY_REACTOR.frequency.initial)
+  const [voltage, setVoltage] = useState<number>(challenge.voltage.initial)
+  const [frequency, setFrequency] = useState<number>(challenge.frequency.initial)
   const [reactorStart, setReactorStart] = useState<number | null>(null)
   const [reactorProgress, setReactorProgress] = useState(0)
-  const [ignition, setIgnition] = useState<'ready' | 'preview' | 'enter'>('ready')
-  const [pulse, setPulse] = useState(0)
+  const ignitionStartedAt = useRef(0)
+  const [needleAngle, setNeedleAngle] = useState(0)
   const [step, setStep] = useState(0)
   const [failed, setFailed] = useState(false)
+  useEffect(() => { ignitionStartedAt.current = performance.now() }, [])
   const complete = useCallback((index: number) => {
     const next = mask | 1 << index
     onRepair(next)
     setTask(nextTask(next))
   }, [mask, onRepair])
   useEffect(() => {
-    if (ignition !== 'preview') return
-    const timer = window.setTimeout(() => {
-      if (pulse + 1 === RECOVERY_IGNITION.sequence.length) setIgnition('enter')
-      else setPulse(pulse + 1)
-    }, RECOVERY_IGNITION.pulseMilliseconds)
-    return () => window.clearTimeout(timer)
-  }, [ignition, pulse])
+    if (task !== RECOVERY_TASK.ignition || mask & 1 << RECOVERY_TASK.ignition) return
+    const timer = window.setInterval(() => {
+      const elapsed = (performance.now() - ignitionStartedAt.current) / 1000
+      setNeedleAngle((elapsed / RECOVERY_IGNITION.rotationSeconds * Math.PI * 2) % (Math.PI * 2))
+    }, IGNITION_SAMPLE_MS)
+    return () => window.clearInterval(timer)
+  }, [task, mask])
   const rotate = (index: number) => {
     const next = rotations.map((value, circuit) => circuit === index ? (value + 1) % CIRCUIT_ORIENTATIONS : value)
     setRotations(next)
     if (next.every(value => value === 0)) complete(RECOVERY_TASK.circuits)
   }
-  const enter = (number: number) => {
-    if (number !== RECOVERY_IGNITION.sequence[step]) { setStep(0); setFailed(true); return }
+  const enter = () => {
+    const angle = (performance.now() - ignitionStartedAt.current) / 1000 / RECOVERY_IGNITION.rotationSeconds * Math.PI * 2 % (Math.PI * 2)
+    const target = challenge.ignitionTargets[step]
+    const difference = Math.atan2(Math.sin(angle - target), Math.cos(angle - target))
+    if (Math.abs(difference) > RECOVERY_IGNITION.toleranceRadians) { setStep(0); setFailed(true); return }
     setFailed(false)
-    if (step === RECOVERY_IGNITION.sequence.length - 1) complete(RECOVERY_TASK.ignition)
+    if (step === challenge.ignitionTargets.length - 1) complete(RECOVERY_TASK.ignition)
     else setStep(step + 1)
   }
   const controls = [
-    { name: text.voltage, value: voltage, change: setVoltage, band: RECOVERY_REACTOR.voltage },
-    { name: text.frequency, value: frequency, change: setFrequency, band: RECOVERY_REACTOR.frequency },
+    { name: text.voltage, value: voltage, change: setVoltage, band: challenge.voltage },
+    { name: text.frequency, value: frequency, change: setFrequency, band: challenge.frequency },
   ]
   const tuned = controls.every(control => control.value >= control.band.min && control.value <= control.band.max)
   const tasksDone = mask === RECOVERY_COMPLETE_MASK
@@ -83,7 +99,6 @@ export function LaunchDiagnostics({ mask, language, onRepair, onLaunch }: {
     return () => window.clearInterval(timer)
   }, [reactorStart, tuned, complete])
 
-  const activeContact = ignition === 'preview' ? RECOVERY_IGNITION.sequence[pulse] : null
   const firstBreak = rotations.findIndex(rotation => rotation !== 0)
   const powered = firstBreak === -1 ? rotations.length : firstBreak
 
@@ -136,17 +151,19 @@ export function LaunchDiagnostics({ mask, language, onRepair, onLaunch }: {
       <button className="recovery-task-action" type="button" disabled={!tuned || locking}
         onClick={() => setReactorStart(performance.now())}>{locking ? text.reactorLocking : text.stabilizeReactor}</button>
     </div> : <div className="recovery-ignition">
-      <p>{gameText(language).diagnostics.memorizeTheSequenceThenActivateThe}</p>
+      <p>{text.alignTheIgnitionRing}</p>
+      <p>{text.pressWhenNeedleEntersTheHighlightedArc}</p>
+      <svg className="ignition-dial" viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="48" className="ignition-track" />
+        <path d={ignitionArc(challenge.ignitionTargets[step])} className="ignition-target" />
+        <line x1="60" y1="60" x2={60 + Math.cos(needleAngle - Math.PI / 2) * 42}
+          y2={60 + Math.sin(needleAngle - Math.PI / 2) * 42} className="ignition-needle" />
+        <circle cx="60" cy="60" r="4" className="ignition-hub" />
+      </svg>
       <div className="recovery-ignition-readout" aria-live="polite" data-failed={failed}>
-        {ignition === 'preview' ? formatText(text.activeContact, { contact: RECOVERY_IGNITION.sequence[pulse] }) : failed ? text.wrongOrderStartAgain
-          : formatText(text.ignitionProgress, { step, total: RECOVERY_IGNITION.sequence.length })}
+        {failed ? text.missedIgnitionWindow : formatText(text.ignitionProgress, { step, total: challenge.ignitionTargets.length })}
       </div>
-      <div className="recovery-ignition-pads">
-        {RECOVERY_IGNITION.contacts.map(number => <button type="button" key={number} disabled={ignition !== 'enter'}
-          data-pulse={number === activeContact} aria-label={`${text.contact} ${number}`} onClick={() => enter(number)}>{number}</button>)}
-      </div>
-      <button className="recovery-task-action" type="button" disabled={ignition === 'preview'}
-        onClick={() => { setPulse(0); setStep(0); setFailed(false); setIgnition('preview') }}>{text.showSequence}</button>
+      <button className="recovery-task-action" type="button" onClick={enter}>{text.synchronizeIgnition}</button>
     </div>)}
     <button className="recovery-launch" type="button" disabled={!tasksDone} onClick={onLaunch}>
       {gameText(language).diagnostics.startTheEnginesAndDepart} <span aria-hidden="true">↗</span>

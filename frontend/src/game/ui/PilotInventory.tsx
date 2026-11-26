@@ -24,7 +24,7 @@ import { MaterialArtwork, PartArtwork, type MaterialKind } from './EquipmentArtw
 import { ShipResistanceReadout } from './ShipResistanceReadout'
 import { IconButton } from './ActionIcon'
 import type { GraphicsQuality } from '../progress/gameSettings'
-import './PilotInventory.css'
+import '../../styles/ui/PilotInventory.scss'
 
 const ShipPreviewCanvas = lazy(() => import('../renderer/ShipPreviewCanvas').then(module => ({ default: module.ShipPreviewCanvas })))
 

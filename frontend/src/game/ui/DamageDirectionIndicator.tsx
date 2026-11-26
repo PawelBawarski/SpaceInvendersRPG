@@ -1,6 +1,6 @@
 import { gameText, type GameLanguage } from '../i18n'
 import type { DamageBearing, DamageSource } from '../domain/damageFeedback'
-import './DamageDirectionIndicator.css'
+import '../../styles/ui/DamageDirectionIndicator.scss'
 
 export interface DamageFeedback extends DamageBearing { id: number; createdAt: number; source: DamageSource }
 

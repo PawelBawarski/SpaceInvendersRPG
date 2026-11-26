@@ -75,16 +75,6 @@
 .world-sector .world-encounter { width: min(215px, 25vw); padding: 10px 12px; }
 .world-sector .world-encounter > span { margin-bottom: 5px; }
 .world-sector .world-encounter > strong { font-size: 12px; }
-.planet-contact-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 94px)); grid-auto-rows: 1fr; gap: 4px; }
-.planet-contact-actions:has(> button:only-child) { grid-template-columns: minmax(0, 94px); }
-.planet-contact-actions:empty { display: none; }
-.planet-contact-actions button, .world-orbit-contact button { color: #cee8f3; background: #0c1c26; border: 1px solid #3b5565; cursor: pointer; font-size: 11px; }
-.planet-contact-actions button { padding: 4px; min-height: 34px; line-height: 1.2; text-wrap: balance; border-radius: 3px; }
-.planet-contact-actions .dock-action { color: #17100a; background: #e9ae70; border-color: #e9ae70; font-weight: 720; }
-.planet-contact-actions button:hover:enabled { border-color: #f8dbb9; }
-.planet-contact-actions button:disabled { opacity: .5; cursor: default; }
-.world-planet-contact .planet-contact-actions { margin-top: 4px; }
-.world-orbit-contact button { margin-top: 8px; padding: 6px 9px; }
 .world-orbit-contact { position: absolute; top: 30px; right: 24px; z-index: 7; width: 215px; padding: 10px 12px; color: #d2e4eb; background: #07131bde; border-left: 1px solid #718d91; }
 .world-orbit-contact strong, .world-orbit-contact small { display: block; }
 .world-orbit-contact strong { font-size: 13px; }
@@ -141,6 +131,32 @@
 }
 .world-repair-objective strong { color: #f1bd81; }
 .world-repair-objective p { margin: 3px 0 0; }
+
+.world-interaction-hint {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  transform: translate(-50%, -115%);
+  pointer-events: none;
+  color: #d8edf5;
+  text-shadow: 0 2px 5px #000;
+}
+.world-interaction-hint kbd {
+  display: grid;
+  min-width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid #aadbea;
+  border-radius: 4px;
+  background: #102636eF;
+  color: #f3fcff;
+  box-shadow: 0 0 14px #67bdd755;
+  font: 700 13px/1 var(--font-mono, monospace);
+}
+.world-interaction-hint span { padding: 2px 5px; border-radius: 3px; background: #06111bd9; font-size: 10px; white-space: nowrap; }
+.radar-danger-zone { color: #e8c188; letter-spacing: .015em; }
 @media (max-width: 760px) {
   .world-repair-objective { left: 12px; transform: none; width: min(290px, calc(100% - 158px)); }
 }

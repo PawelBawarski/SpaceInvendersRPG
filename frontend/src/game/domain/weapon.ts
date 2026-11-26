@@ -1,10 +1,12 @@
 import type { ShipPartBonuses } from '../progress/shipParts'
 import type { ShipPartRarity } from '../progress/shipParts'
 
+const WEAPON_BASELINE = { fireCooldown: .16, firingRateReduction: .7 } as const
+
 export const PLAYER_WEAPON = {
   criticalChance: 0.1,
   criticalMultiplier: 1.5,
-  fireCooldown: 0.16,
+  fireCooldown: WEAPON_BASELINE.fireCooldown / (1 - WEAPON_BASELINE.firingRateReduction),
   projectileSpeed: 1000,
   projectilesPerVolley: 2,
   projectileLifetime: 2.8,

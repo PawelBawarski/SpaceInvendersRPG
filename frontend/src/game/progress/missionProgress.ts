@@ -11,7 +11,7 @@ import {
   type ShipPartSlot,
 } from './shipParts'
 import { getGalaxy, ORION_SECTOR_ID, type GalaxyId } from '../domain/galaxyChart'
-import { getMission, isMissionComplete, MISSIONS, type MissionId } from '../missions/definitions'
+import { getMission, isCampaignComplete, isMissionComplete, MISSIONS, type CampaignEndingId, type MissionId } from '../missions/definitions'
 import { DAMAGE_TYPES, DEFAULT_SHIP_RESISTANCES, getDamageResistance, MAX_DAMAGE_RESISTANCE, type DamageType, type ResistanceProfile } from '../domain/damageTypes'
 import { FIRST_FLIGHT_VITALS, type ShipVitals } from '../domain/shipTelemetry'
 import { RECOVERY_COMPLETE_MASK } from '../simulation/ShipRecovery'
@@ -30,6 +30,7 @@ export interface MissionProgress {
   droneRespawns: Record<string, number>
   shipVitals: ShipVitals | null
   completedMissions: MissionId[]
+  campaignEnding: CampaignEndingId | null
   missionObjectiveProgress: Partial<Record<MissionId, number>>
   wardenDefeats: number
   meridianCore: number
@@ -94,6 +95,7 @@ export function createEmptyMissionProgress(): MissionProgress {
     repairMask: 0, orbitPlanetId: null, recoveryStationId: null, droneRespawns: {},
     shipVitals: null,
     completedMissions: [],
+    campaignEnding: null,
     missionObjectiveProgress: {},
     wardenDefeats: 0,
     meridianCore: 0,
@@ -167,6 +169,7 @@ export function loadMissionProgress(): MissionProgress {
       droneRespawns: parsed.droneRespawns && typeof parsed.droneRespawns === 'object' ? Object.fromEntries(Object.entries(parsed.droneRespawns).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0)) : {},
       shipVitals: !prologueComplete || (initialRepairRequired && !savedVitals) ? { ...FIRST_FLIGHT_VITALS } : savedVitals,
       completedMissions: MISSIONS.filter(mission => Array.isArray(parsed.completedMissions) && parsed.completedMissions.includes(mission.id)).map(mission => mission.id),
+      campaignEnding: parsed.campaignEnding === 'rebuild' || parsed.campaignEnding === 'seal' || parsed.campaignEnding === 'command' ? parsed.campaignEnding : null,
       missionObjectiveProgress: Object.fromEntries(MISSIONS.map(mission => [mission.id, Math.floor(nonNegativeNumber(parsed.missionObjectiveProgress?.[mission.id]))]).filter(([, count]) => Number(count) > 0)),
       wardenDefeats: typeof parsed.wardenDefeats === 'number' ? parsed.wardenDefeats : 0,
       meridianCore: typeof parsed.meridianCore === 'number' ? parsed.meridianCore : 0,
@@ -306,6 +309,28 @@ export function completeWorldMission(progress: MissionProgress, id: MissionId): 
   return { ...next, completedMissions: [...progress.completedMissions, id] }
 }
 
+const CAMPAIGN_ENDING_REWARDS = {
+  rebuild: { credits: 1800, experience: 600, meridianCore: 1, scrapMetal: 8, copper: 4, radioactiveResidue: 2 },
+  seal: { credits: 1400, experience: 850, meridianCore: 0, scrapMetal: 6, copper: 4, radioactiveResidue: 5 },
+  command: { credits: 2300, experience: 500, meridianCore: 2, scrapMetal: 4, copper: 7, radioactiveResidue: 3 },
+} as const
+
+export function chooseCampaignEnding(progress: MissionProgress, ending: CampaignEndingId): MissionProgress {
+  if (progress.campaignEnding || !isCampaignComplete(progress)) return progress
+  const reward = CAMPAIGN_ENDING_REWARDS[ending]
+  return {
+    ...progress,
+    campaignEnding: ending,
+    lastMission: 'victory',
+    credits: progress.credits + reward.credits,
+    experience: progress.experience + reward.experience,
+    meridianCore: progress.meridianCore + reward.meridianCore,
+    scrapMetal: progress.scrapMetal + reward.scrapMetal,
+    copper: progress.copper + reward.copper,
+    radioactiveResidue: progress.radioactiveResidue + reward.radioactiveResidue,
+  }
+}
+
 export function recordMissionObjectiveProgress(progress: MissionProgress, id: MissionId, count: number): MissionProgress {
   const next = Math.floor(nonNegativeNumber(count))
   if (isMissionComplete(progress, id) || next <= (progress.missionObjectiveProgress[id] ?? 0)) return progress
@@ -407,11 +432,12 @@ export function applyDroneLoot(
   loot: SectorLoot,
   respawnAt?: number,
 ): MissionProgress {
-  if (progress.defeatedDrones.includes(droneId)) return progress
+  const respawns = respawnAt !== undefined
+  if (!respawns && progress.defeatedDrones.includes(droneId)) return progress
   return {
     ...applyLoot(progress, loot),
-    defeatedDrones: [...progress.defeatedDrones, droneId],
-    droneRespawns: respawnAt ? { ...progress.droneRespawns, [droneId]: respawnAt } : progress.droneRespawns,
+    defeatedDrones: respawns ? progress.defeatedDrones : [...progress.defeatedDrones, droneId],
+    droneRespawns: respawns ? { ...progress.droneRespawns, [droneId]: respawnAt } : progress.droneRespawns,
   }
 }
 

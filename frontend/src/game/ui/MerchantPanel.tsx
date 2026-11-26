@@ -7,7 +7,7 @@ import { getShipPartLevelRequirement, getShipPartSellValue, type ShipPart } from
 import { MaterialArtwork, PartArtwork } from './EquipmentArtwork'
 import { IconButton } from './ActionIcon'
 import { getShipPartRarityLabel, getShipPartSlotLabel, getShipPartStatSummary } from './shipPartPresentation'
-import './SpaceDialogs.css'
+import '../../styles/ui/SpaceDialogs.scss'
 
 const materialIcons = {
   scrapMetal: 'alloy',

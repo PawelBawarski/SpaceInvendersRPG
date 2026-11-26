@@ -2,8 +2,8 @@ import { formatControlKey, gameText } from './game/i18n'
 import { createNewCampaign, getInitialRepairStation, prepareWorld, recoverShipAtHangar } from './game/progress/worldSession'
 import { RECOVERY_COMPLETE_MASK } from './game/simulation/ShipRecovery'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import './App.css'
-import { getNextCampaignMission, isMissionComplete, MISSIONS, type MissionId } from './game/missions/definitions'
+import './styles/App.scss'
+import { getNextCampaignMission, isMissionComplete, isMissionUnlocked, MISSIONS, type MissionId } from './game/missions/definitions'
 import { FLIGHT_COMMANDS, type FlightCommand } from './game/input/InputController'
 import { findNearestStation, getGalaxyWorld, ORION_SECTOR_ID, type SectorPosition } from './game/domain/exploration'
 import { GALAXY_ARRIVAL, getGalaxy, type GalaxyId } from './game/domain/galaxyChart'
@@ -11,6 +11,7 @@ import {
   applyDroneLoot,
   applyPlanetLoot,
   completeWorldMission,
+  chooseCampaignEnding,
   recordMissionObjectiveProgress,
   canStoreShipPart,
   craftRandomShipPart,
@@ -41,9 +42,10 @@ import {
 import { HANGAR_CONVERSATIONS, HANGAR_CREW } from './game/hangar/crew'
 import PilotInventory from './game/ui/PilotInventory'
 import { MaterialArtwork, PartArtwork } from './game/ui/EquipmentArtwork'
-import './game/ui/GarageArtwork.css'
+import './styles/ui/GarageArtwork.scss'
 import { PilotProgressBar } from './game/ui/PilotProgressBar'
 import { GamePauseOverlay } from './game/ui/GamePauseOverlay'
+import { GameLoadingScreen } from './game/ui/GameLoadingScreen'
 import { ShipStatisticsPanel } from './game/ui/ShipStatisticsPanel'
 import { getShipPartSlotLabel } from './game/ui/shipPartPresentation'
 import { HangarMaintenancePanel } from './game/ui/HangarMaintenancePanel'
@@ -67,10 +69,12 @@ import {
   type GameSettings,
 } from './game/progress/gameSettings'
 
-const SectorCanvas = lazy(() => import('./game/renderer/SectorCanvas').then((module) => ({
+const loadSectorCanvas = () => import('./game/renderer/SectorCanvas')
+const loadShipRecovery = () => import('./game/ui/ShipRecovery')
+const SectorCanvas = lazy(() => loadSectorCanvas().then((module) => ({
   default: module.SectorCanvas,
 })))
-const ShipRecovery = lazy(() => import('./game/ui/ShipRecovery').then(module => ({ default: module.ShipRecovery })))
+const ShipRecovery = lazy(() => loadShipRecovery().then(module => ({ default: module.ShipRecovery })))
 type GarageSceneComponent = typeof import('./game/renderer/GarageCanvas')['GarageCanvas']
 
 type Screen = 'prologue' | 'title' | 'campaign' | 'garage' | 'exploration' | 'settings' | 'credits' | 'quit'
@@ -113,6 +117,7 @@ function App() {
   const [galaxyChartOpen, setGalaxyChartOpen] = useState(false)
   const [jumpDestination, setJumpDestination] = useState<GalaxyId | null>(null)
   const [boundaryCourse, setBoundaryCourse] = useState(false)
+  const [boundaryReleaseId, setBoundaryReleaseId] = useState(0)
   const routeActive = galaxyChartOpen || jumpDestination !== null || boundaryCourse
   const language = settings.language
   useEffect(() => { document.documentElement.lang = language }, [language])
@@ -121,7 +126,8 @@ function App() {
   const repairStation = progress.initialRepairRequired ? getInitialRepairStation(world) : undefined
   const navigationStationId = repairStation?.id ?? trackedStationId
   const activeMission = !progress.initialRepairRequired && world.galaxy.id === ORION_SECTOR_ID
-    ? trackedMissionId && !isMissionComplete(progress, trackedMissionId) ? trackedMissionId : getNextCampaignMission(progress)
+    ? trackedMissionId && !isMissionComplete(progress, trackedMissionId) && isMissionUnlocked(progress, trackedMissionId)
+      ? trackedMissionId : getNextCampaignMission(progress)
     : null
   const displayedExperience = progress.experience
   const equippedPartRarities = getEquippedPartRarities(progress.shipParts, progress.equippedParts)
@@ -136,6 +142,13 @@ function App() {
     saveGameSettings(next)
     setSettings(next)
   }, [settings])
+
+  const closeGalaxyChart = useCallback(() => {
+    setJumpDestination(null)
+    setGalaxyChartOpen(false)
+    setBoundaryCourse(false)
+    setBoundaryReleaseId(id => id + 1)
+  }, [])
 
   useEffect(() => {
     if (!rebindingCommand) return
@@ -260,9 +273,8 @@ function App() {
       event.preventDefault()
       if (jumpDestination) return
       if (galaxyChartOpen || merchantOpen || boundaryCourse) {
-        setGalaxyChartOpen(false)
+        closeGalaxyChart()
         setMerchantOpen(false)
-        setBoundaryCourse(false)
         return
       }
       if (inventoryOpen) {
@@ -279,9 +291,10 @@ function App() {
 
     window.addEventListener('keydown', handlePauseShortcut)
     return () => window.removeEventListener('keydown', handlePauseShortcut)
-  }, [inventoryOpen, pauseSettingsOpen, rebindingCommand, screen, galaxyChartOpen, merchantOpen, boundaryCourse, jumpDestination])
+  }, [inventoryOpen, pauseSettingsOpen, rebindingCommand, screen, galaxyChartOpen, merchantOpen, boundaryCourse, jumpDestination, closeGalaxyChart])
 
   const startNewGame = () => {
+    void loadShipRecovery()
     const fresh = createNewCampaign()
     setPrologueLaunching(false)
     saveMissionProgress(fresh)
@@ -346,6 +359,8 @@ function App() {
   const loadGame = () => {
     if (!hasSave) return
     let savedProgress = prepareWorld(loadMissionProgress())
+    if (savedProgress.prologueComplete) void loadSectorCanvas()
+    else void loadShipRecovery()
     const savedStation = savedProgress.recoveryStationId
       ? getGalaxyWorld(savedProgress.sectorId, savedProgress.worldSeed).stations.find(station => station.id === savedProgress.recoveryStationId)
       : undefined
@@ -474,6 +489,7 @@ function App() {
     setStatisticsOpen(false)
     shipTelemetryRef.current = null
     setDepartureWorldReady(false)
+    void loadSectorCanvas()
     setDepartureStationId(station.id)
     setCombatActive(false)
     setWorldSessionKey(key => key + 1)
@@ -557,11 +573,11 @@ function App() {
   const hangarVitals = getShipVitals(progress, hangarMaximum)
 
   const renderScreen = () => {
-  if (screen === 'prologue') return <Suspense fallback={<div className="game-loading" role="status">{gameText(language).application.loadingTheSurface}</div>}>
-    <ShipRecovery planet={world.planets[0]} language={language} repairMask={progress.repairMask} graphics={settings}
+  if (screen === 'prologue') return <Suspense fallback={<GameLoadingScreen label={gameText(language).application.loadingTheSurface} />}>
+    <ShipRecovery planet={world.planets[0]} language={language} worldSeed={progress.worldSeed} repairMask={progress.repairMask} graphics={settings}
       launching={prologueLaunching} worldReady={departureWorldReady} volume={settings.mainVolume}
       onRepair={mask => updateSavedProgress(current => ({ ...current, repairMask: current.repairMask | mask }))}
-      onLaunch={() => { if (progress.repairMask !== RECOVERY_COMPLETE_MASK) return; setDepartureWorldReady(false); setPrologueLaunching(true); setWorldSessionActive(true) }}
+      onLaunch={() => { if (progress.repairMask !== RECOVERY_COMPLETE_MASK) return; void loadSectorCanvas(); setDepartureWorldReady(false); setPrologueLaunching(true); setWorldSessionActive(true) }}
       onFinished={() => { updateSavedProgress(current => ({ ...current, prologueComplete: true })); setScreen('exploration'); setPrologueLaunching(false) }}
       onExit={exitGameplay} />
   </Suspense>
@@ -606,7 +622,7 @@ function App() {
         )}
         {merchantOpen && <MerchantPanel language={language} merchant={world.merchant} progress={progress} onClose={() => setMerchantOpen(false)} onTrade={updateSavedProgress} />}
         {galaxyChartOpen && <GalaxyTravel language={language} origin={world.galaxy} jumpingTo={jumpDestination ? getGalaxy(jumpDestination) : null}
-          onClose={() => setGalaxyChartOpen(false)} onJump={setJumpDestination} />}
+          onClose={closeGalaxyChart} onCancelJump={closeGalaxyChart} onJump={setJumpDestination} />}
       </>
     )
   }
@@ -971,15 +987,16 @@ function App() {
   return <NavigationJournal language={language} progress={progress} world={world} activeMission={activeMission} trackedStationId={navigationStationId}
     onClose={() => setScreen(journalReturnScreen)}
     onTrackMission={id => { setTrackedStationId(null); setTrackedMissionId(id) }}
+    onChooseEnding={ending => updateSavedProgress(current => chooseCampaignEnding(current, ending))}
     onTrackStation={setTrackedStationId}
-    onBoundaryCourse={!progress.initialRepairRequired && journalReturnScreen === 'exploration' && !combatActive && !world.planets.some(planet => planet.id === progress.orbitPlanetId && planet.orbitalFaction)
+    onBoundaryCourse={!progress.initialRepairRequired && journalReturnScreen === 'exploration' && !combatActive && !world.planets.some(planet => planet.id === progress.orbitPlanetId)
       ? () => { setBoundaryCourse(true); setScreen('exploration') } : undefined} />
   }
 
   const worldMounted = worldSessionActive && screen !== 'title' && screen !== 'quit' && (screen !== 'garage' || departureStationId !== null) && !(screen === 'campaign' && journalReturnScreen === 'garage')
   return <>
     {worldMounted && <div className="persistent-world-layer" style={{ visibility: screen === 'exploration' ? 'visible' : 'hidden' }} aria-hidden={screen !== 'exploration'}>
-      <Suspense fallback={<div className="game-loading" role="status">{gameText(language).application.loadingGalaxy}</div>}>
+      <Suspense fallback={<GameLoadingScreen label={gameText(language).application.loadingGalaxy} />}>
         <SectorCanvas key={`${world.galaxy.id}:${worldSessionKey}`} world={world}
           language={language} graphics={settings} controls={settings.controls}
           shipLights={settings.shipLights} onToggleLights={() => updateSettings({ shipLights: !settings.shipLights })}
@@ -987,7 +1004,7 @@ function App() {
           shipBonuses={shipBonuses} equippedPartRarities={equippedPartRarities} progress={progress} activeMission={activeMission}
           trackedStationId={navigationStationId} repairStation={repairStation}
           paused={screen !== 'exploration' || inventoryOpen || statisticsOpen || pauseOpen || pauseSettingsOpen || merchantOpen || galaxyChartOpen}
-          renderActive={screen === 'exploration' && !statisticsOpen && !inventoryOpen} boundaryCourse={boundaryCourse} jumpDestination={jumpDestination}
+          renderActive={screen === 'exploration' && !statisticsOpen && !inventoryOpen} boundaryCourse={boundaryCourse} boundaryReleaseId={boundaryReleaseId} jumpDestination={jumpDestination}
           onBoundaryCourseFailure={() => setBoundaryCourse(false)} onOpenGalaxyChart={showGalaxyChart}
           onJumpComplete={finishGalaxyJump} onOpenMerchant={() => setMerchantOpen(true)}
           onPlanetScan={collectPlanet} onDroneDefeated={defeatDrone}

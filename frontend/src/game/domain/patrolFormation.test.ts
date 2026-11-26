@@ -4,16 +4,23 @@ import { sampleFormationPosition, samplePatrolRoute } from './patrolFormation'
 
 describe('patrol formations', () => {
   const grouped = ORION_DRONES.filter(site => site.formation)
-  const ids = [...new Set(grouped.map(site => site.formation!.id))]
+  const formations = new Map<string, typeof grouped>()
+  for (const ship of grouped) {
+    const members = formations.get(ship.formation!.id) ?? []
+    members.push(ship)
+    formations.set(ship.formation!.id, members)
+  }
+  const ids = [...formations.keys()]
 
-  it('mixes same-faction trios with independent ships and preserves distinct identities', () => {
-    expect(grouped.length).toBe(ids.length * 3)
+  it('mixes same-faction wings with independent ships and preserves distinct identities', () => {
+    expect(grouped.length).toBe([...formations.values()].reduce((count, members) => count + members.length, 0))
     expect(ids.length).toBeGreaterThan(700)
     expect(ORION_DRONES.filter(site => !site.formation).length).toBeGreaterThan(2000)
     expect(new Set(ORION_DRONES.map(site => site.id)).size).toBe(ORION_DRONES.length)
     for (const id of ids) {
-      const members = grouped.filter(site => site.formation!.id === id)
-      expect(members.map(site => site.formation!.slot)).toEqual([0, 1, 2])
+      const members = formations.get(id)!
+      expect(members).toHaveLength(members[0].formation!.id.startsWith('hostile-wing-') ? 4 : 3)
+      expect(members.map(site => site.formation!.slot)).toEqual(Array.from({ length: members.length }, (_, slot) => slot))
       expect(new Set(members.map(site => site.faction)).size).toBe(1)
       for (const member of members) {
         const route = samplePatrolRoute(member.formation!, 0)
@@ -24,7 +31,7 @@ describe('patrol formations', () => {
 
   it('keeps formations separated and outside all enlarged planetary surfaces over an entire route', () => {
     for (const id of ids) {
-      const members = grouped.filter(site => site.formation!.id === id)
+      const members = formations.get(id)!
       const formation = members[0].formation!
       const period = Math.PI * 2 * formation.radius / formation.speed
       let minimumClearance = Infinity

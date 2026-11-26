@@ -13,6 +13,28 @@ export const PLAYER_CONTACT_RADIUS = 2.35
 export const RETREAT_HULL_FRACTION = .30
 export const BOSS_RAGE_HULL_FRACTION = .45
 
+const ENEMY_LEVEL_GROWTH = { hullLinear: .14, hullQuadratic: .003, damage: .1, attackRate: .012, minimumAttackInterval: .62, speed: .018, maximumSpeedBonus: .7, range: .05, projectile: .055 } as const
+export const BOSS_BALANCE = { hull: 1.7, shield: 1.35, damage: 1.25, attackInterval: .9, projectileSpeed: 1.12, maneuverSpeed: 1.45, activationRange: 1.15 } as const
+
+export function scaleEnemyCombatStats<T extends { health: number; damage: number; attackInterval: number; attackRange: number; projectileSpeed: number; speed: number }>(stats: T, level: number): T {
+  const threat = Math.max(1, Math.floor(level)) - 1
+  const hullScale = 1 + threat * ENEMY_LEVEL_GROWTH.hullLinear + threat ** 2 * ENEMY_LEVEL_GROWTH.hullQuadratic
+  return {
+    ...stats,
+    health: Math.round(stats.health * hullScale),
+    damage: Math.round(stats.damage * (1 + threat * ENEMY_LEVEL_GROWTH.damage)),
+    attackInterval: stats.attackInterval * Math.max(ENEMY_LEVEL_GROWTH.minimumAttackInterval, 1 - threat * ENEMY_LEVEL_GROWTH.attackRate),
+    attackRange: stats.attackRange * (1 + Math.min(1.4, threat * ENEMY_LEVEL_GROWTH.range)),
+    projectileSpeed: stats.projectileSpeed * (1 + Math.min(1.2, threat * ENEMY_LEVEL_GROWTH.projectile)),
+    speed: stats.speed * (1 + Math.min(ENEMY_LEVEL_GROWTH.maximumSpeedBonus, threat * ENEMY_LEVEL_GROWTH.speed)),
+  }
+}
+
+export function getEnemyArmor(level: number, archetype: ShipArchetype, boss = false): number {
+  const base = boss ? 12 : archetype === 'frigate' ? 10 : archetype === 'bomber' ? 6 : archetype === 'interceptor' ? 3 : 1
+  return Math.round(base + Math.max(0, level - 1) * (boss ? .35 : .45))
+}
+
 type FirePattern = 'aimed' | 'fan' | 'burst' | 'spiral'
 
 export function getEnemyShieldCapacity(archetype: ShipArchetype, faction: FactionId, hull: number) {

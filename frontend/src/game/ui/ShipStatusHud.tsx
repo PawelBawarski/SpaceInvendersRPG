@@ -1,6 +1,6 @@
 import { gameText, type GameLanguage } from '../i18n'
 import { DODGE_TIMING } from '../domain/combat'
-import './ShipStatusHud.css'
+import '../../styles/ui/ShipStatusHud.scss'
 
 export interface ShipStatusHudProps {
   language: GameLanguage

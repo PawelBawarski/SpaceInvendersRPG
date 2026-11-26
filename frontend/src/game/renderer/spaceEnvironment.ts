@@ -1,6 +1,6 @@
 import {
   Color3, DirectionalLight, DynamicTexture, FresnelParameters, GlowLayer, ImageProcessingConfiguration,
-  Mesh, MeshBuilder, Scene, StandardMaterial, Vector3,
+  Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3,
 } from './babylon'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import type { PlanetSite } from '../domain/exploration'
@@ -56,7 +56,7 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
     const x = random() * size
     const y = random() * size / 2
     const radius = random() > 0.98 ? 1 : 0.25 + random() * 0.4
-    context.globalAlpha = .12 + random() * .34
+    context.globalAlpha = (.12 + random() * .34) * .9
     context.fillStyle = index % 9 === 0 ? '#efc59e' : index % 5 === 0 ? '#82b9e4' : '#e2efff'
     context.beginPath()
     context.arc(x, y, radius, 0, Math.PI * 2)
@@ -104,14 +104,14 @@ export function createSpaceEnvironment(scene: Scene, quality: GraphicsQuality, o
 
   const key = new DirectionalLight('meridianStarlight', new Vector3(-0.6, -0.45, 0.75), scene)
   key.diffuse = new Color3(0.7, 0.83, 1)
-  key.intensity = .84
+  key.intensity = .66
   key.renderPriority = 2
   const rim = new DirectionalLight('meridianColdRim', new Vector3(0.6, 0.25, -1), scene)
   rim.diffuse = new Color3(.41, .63, 1)
-  rim.intensity = .14
+  rim.intensity = .045
   scene.imageProcessingConfiguration.toneMappingEnabled = true
   scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
-  scene.imageProcessingConfiguration.exposure = .84
+  scene.imageProcessingConfiguration.exposure = .75
   scene.imageProcessingConfiguration.contrast = 1.21
   return key
 }
@@ -162,6 +162,8 @@ export function createPlanetVisual(
   planet.position.set(site.x, site.y, site.z)
   planet.material = material
   addSphereLods(planet, site.radius * 2, site.radius, quality)
+  const ecosystem = createOrbitalEcosystem(planet, site, quality)
+  if (ecosystem.present) planet.metadata = { ...planet.metadata, updateEcosystem: ecosystem.update, surfaceLifePresent: true }
 
   const atmosphereMaterial = createSceneMaterial(`atmosphereMaterial-${site.id}`, scene)
   atmosphereMaterial.disableLighting = true
@@ -196,4 +198,91 @@ export function createPlanetVisual(
     }
   }
   return planet
+}
+
+function createOrbitalEcosystem(planet: Mesh, site: Pick<PlanetSite, 'id' | 'color' | 'radius'>, quality: GraphicsQuality) {
+  const seed = [...site.id].reduce((value, character) => (Math.imul(value, 31) + character.charCodeAt(0)) >>> 0, 17)
+  const present = seed % 3 === 0 || ['nacre-reef', 'sable-garden', 'pale-sanctum'].some(id => site.id.endsWith(id))
+  if (!present) return { present, update: (_dt: number) => {} }
+  const random = randomSequence(seed)
+  const floraCount = quality === 'low' ? 4 : quality === 'high' ? 9 : 6
+  const faunaCount = quality === 'low' ? 1 : quality === 'high' ? 3 : 2
+  const floraMaterial = createSceneMaterial(`orbitalFlora-${site.id}`, planet.getScene())
+  floraMaterial.diffuseColor = Color3.Lerp(Color3.FromHexString('#60bd88'), Color3.FromHexString(site.color), .24)
+  floraMaterial.emissiveColor = floraMaterial.diffuseColor.scale(.22)
+  floraMaterial.specularColor = Color3.Black()
+  floraMaterial.freeze()
+  const faunaMaterial = createSceneMaterial(`orbitalFauna-${site.id}`, planet.getScene())
+  faunaMaterial.diffuseColor = Color3.Lerp(Color3.FromHexString('#7ad4d1'), Color3.FromHexString(site.color), .25)
+  faunaMaterial.emissiveColor = faunaMaterial.diffuseColor.scale(.13)
+  faunaMaterial.specularColor = new Color3(.08, .12, .14)
+  faunaMaterial.freeze()
+  const direction = new Vector3()
+  const fauna: { root: TransformNode; latitude: number; longitude: number; speed: number; phase: number }[] = []
+  const setSurfaceDirection = (latitude: number, longitude: number, target: Vector3) => target.set(
+    Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude),
+  ).normalize()
+  const orientAtSurface = (root: TransformNode, normal: Vector3) => {
+    root.rotationQuaternion ??= Quaternion.Identity()
+    Quaternion.FromUnitVectorsToRef(Vector3.UpReadOnly, normal, root.rotationQuaternion)
+  }
+  for (let index = 0; index < floraCount; index++) {
+    const latitude = (random() - .5) * 1.82
+    const longitude = random() * Math.PI * 2
+    const normal = setSurfaceDirection(latitude, longitude, direction)
+    const root = new TransformNode(`orbitalFloraRoot-${site.id}-${index}`, planet.getScene())
+    root.parent = planet
+    const surfaceOffset = site.radius + site.radius * .0012
+    root.position.set(normal.x * surfaceOffset, normal.y * surfaceOffset, normal.z * surfaceOffset)
+    orientAtSurface(root, normal)
+    const height = Math.max(3, site.radius * (.003 + random() * .002))
+    const stalk = MeshBuilder.CreateCylinder(`orbitalFloraStem-${site.id}-${index}`, {
+      height, diameterTop: height * .08, diameterBottom: height * .3, tessellation: quality === 'low' ? 4 : 5,
+    }, planet.getScene())
+    stalk.parent = root
+    stalk.position.y = height * .48
+    stalk.material = floraMaterial
+    stalk.isPickable = false
+    if (index % 2 === 0) {
+      const bloom = MeshBuilder.CreateSphere(`orbitalFloraBloom-${site.id}-${index}`, {
+        diameter: height * .34, segments: quality === 'low' ? 5 : 7,
+      }, planet.getScene())
+      bloom.parent = root
+      bloom.position.set(height * (random() - .5) * .24, height * .92, 0)
+      bloom.material = floraMaterial
+      bloom.isPickable = false
+    }
+  }
+  for (let index = 0; index < faunaCount; index++) {
+    const latitude = (random() - .5) * 1.72
+    const longitude = random() * Math.PI * 2
+    const root = new TransformNode(`orbitalFaunaRoot-${site.id}-${index}`, planet.getScene())
+    root.parent = planet
+    const normal = setSurfaceDirection(latitude, longitude, direction)
+    const surfaceOffset = site.radius + site.radius * .0008
+    root.position.set(normal.x * surfaceOffset, normal.y * surfaceOffset, normal.z * surfaceOffset)
+    orientAtSurface(root, normal)
+    const body = MeshBuilder.CreateIcoSphere(`orbitalFaunaBody-${site.id}-${index}`, {
+      radius: Math.max(2, site.radius * .00125), subdivisions: quality === 'low' ? 1 : 2,
+    }, planet.getScene())
+    body.parent = root
+    body.scaling.set(1.5, .76, .92)
+    body.material = faunaMaterial
+    body.isPickable = false
+    fauna.push({ root, latitude, longitude, speed: .035 + random() * .055, phase: random() * Math.PI * 2 })
+  }
+  let elapsed = 0
+  return {
+    present,
+    update(dt: number) {
+      elapsed += Math.max(0, dt)
+      for (const creature of fauna) {
+        const longitude = creature.longitude + elapsed * creature.speed + Math.sin(elapsed * .5 + creature.phase) * .035
+        const normal = setSurfaceDirection(creature.latitude, longitude, direction)
+        const surfaceOffset = site.radius + site.radius * .0008
+        creature.root.position.set(normal.x * surfaceOffset, normal.y * surfaceOffset, normal.z * surfaceOffset)
+        orientAtSurface(creature.root, normal)
+      }
+    },
+  }
 }

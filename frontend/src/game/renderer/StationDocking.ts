@@ -1,9 +1,11 @@
-import { Color3, FreeCamera, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from './babylon'
+import { Color3, FreeCamera, Mesh, MeshBuilder, PointLight, Quaternion, Scene, StandardMaterial, TransformNode, Vector3 } from './babylon'
 import { ALL_HANGARS, type SectorPosition, type StationSite } from '../domain/exploration'
 import type { GraphicsQuality } from '../progress/gameSettings'
 import { advanceDockingProgress, canDockAt, DEPARTURE_DURATION, dockingFade, forwardRotation, getStationApproachStage, sampleStationApproach, sampleStationDeparture } from '../simulation/StationApproach'
 import { createSceneMaterial } from './sectorDepth'
 import { createProfiledHull } from './ProfiledHull'
+
+const PLANETARY_HANGAR_VISUAL_SCALE = 3.2
 
 export function createStationSystem(scene: Scene, ship: TransformNode, camera: FreeCamera, quality: GraphicsQuality, sites: readonly StationSite[] = ALL_HANGARS) {
   const stations = sites.map(station => {
@@ -84,6 +86,15 @@ export function createStationSystem(scene: Scene, ship: TransformNode, camera: F
       const merged = Mesh.MergeMeshes(meshes, true, true)
       if (merged) { merged.name = `stationGeometry-${station.id}-${material.name}`; merged.parent = root; merged.isPickable = false }
       material.freeze()
+    }
+    if (station.planetId) {
+      root.scaling.setAll(PLANETARY_HANGAR_VISUAL_SCALE)
+      const beaconLight = new PointLight(`planetaryHangarLight-${station.id}`, new Vector3(0, r * .76, -r * .25), scene)
+      beaconLight.parent = root
+      beaconLight.diffuse = Color3.FromHexString(station.color)
+      beaconLight.intensity = 1.7
+      beaconLight.range = r * 12
+      beaconLight.includedOnlyMeshes = root.getChildMeshes()
     }
     root.position.set(station.x, station.y, station.z)
     root.computeWorldMatrix(true)

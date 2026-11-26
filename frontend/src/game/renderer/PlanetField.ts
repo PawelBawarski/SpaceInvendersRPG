@@ -87,7 +87,11 @@ export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], qu
     },
     update(dt: number, position: Vector3) {
       clock += dt
-      for (const entry of entries) if (entry.detail) entry.detail.rotation.y += dt * 0.006
+      for (const entry of entries) if (entry.detail) {
+        entry.detail.rotation.y += dt * 0.006
+        const updateEcosystem = entry.detail.metadata?.updateEcosystem as ((elapsed: number) => void) | undefined
+        updateEcosystem?.(dt)
+      }
       if (clock < 0.35) return
       clock = 0
       for (const entry of entries) entry.distance = Vector3.Distance(position, entry.center)

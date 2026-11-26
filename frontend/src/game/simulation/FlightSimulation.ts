@@ -3,8 +3,12 @@ import type { ShipPartBonuses } from '../progress/shipParts'
 import { DODGE_TIMING } from '../domain/combat'
 import { BASE_SHIP_VITALS } from '../domain/shipTelemetry'
 
-export const FLIGHT_SPEEDS = { cruise: 292.5, reverse: 241.8 } as const
-export const FLIGHT_STEERING = { pitchRate: 1.1, yawRate: 1.25, rollRate: 2.4, pitchLimit: 1.25, dodgeStep: 7 } as const
+const FLIGHT_SPEED_BASELINE = { cruise: 292.5, reverse: 241.8, reduction: .2 } as const
+export const FLIGHT_SPEEDS = {
+  cruise: FLIGHT_SPEED_BASELINE.cruise * (1 - FLIGHT_SPEED_BASELINE.reduction),
+  reverse: FLIGHT_SPEED_BASELINE.reverse * (1 - FLIGHT_SPEED_BASELINE.reduction),
+} as const
+export const FLIGHT_STEERING = { pitchRate: 1.1, yawRate: 1.25, rollRate: 2.4, dodgeStep: 7 } as const
 const SPEED_RESPONSE = 2.6
 const MAX_DODGE_COOLDOWN_REDUCTION = 0.55
 
@@ -61,6 +65,14 @@ export function readFlightUpdate(
 export function integrateShipRoll(angle: number, command: number, dt: number, handling = 1): number {
   // The chase camera faces +Z; positive roll lowers the port wing on screen.
   return angle + command * FLIGHT_STEERING.rollRate * handling * Math.max(0, dt)
+}
+
+export function integrateShipPitch(angle: number, command: number, dt: number, handling = 1): number {
+  return wrapAngle(angle + command * FLIGHT_STEERING.pitchRate * handling * Math.max(0, dt))
+}
+
+function wrapAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
 }
 
 export function approachFlightSpeed(speed: number, targetSpeed: number, dt: number): number {

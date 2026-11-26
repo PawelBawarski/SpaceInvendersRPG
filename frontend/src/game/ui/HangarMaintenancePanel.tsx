@@ -1,7 +1,7 @@
 import { formatText, gameText, type GameLanguage } from '../i18n'
 import type { MissionProgress } from '../progress/missionProgress'
 import { getShieldRechargeCost, getShipVitals, HANGAR_HULL_REGEN_PER_SECOND } from '../progress/shipMaintenance'
-import './HangarMaintenancePanel.css'
+import '../../styles/ui/HangarMaintenancePanel.scss'
 
 export function HangarMaintenancePanel({ progress, language, onRecharge }: { progress: MissionProgress; language: GameLanguage; onRecharge: () => void }) {
   const cost = getShieldRechargeCost(progress)

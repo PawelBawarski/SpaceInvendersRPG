@@ -1,6 +1,6 @@
 import { gameText, type GameLanguage } from '../i18n'
 import { createPlanetLandscape } from './PlanetLandscape'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Color3,
   Color4,
@@ -27,10 +27,11 @@ import { createShipVisual, setShipDrivePower, type ShipDrive } from './shipVisua
 import { showHullDamage } from './HullDamage'
 import { createHangarRepair } from './HangarRepair'
 import { createPlanetVisual } from './spaceEnvironment'
-import { HANGAR_DEPARTURE_DURATION, HANGAR_LANDING_DURATION, sampleHangarDeparture } from '../simulation/StationApproach'
-import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY, sampleDepartureCompression, sampleDepartureLandingGear, sampleHangarLanding, type HangarLandingStage } from '../simulation/HangarLanding'
+import { HANGAR_DEPARTURE_DURATION, HANGAR_LANDING_DURATION, sampleHangarDeparture, sampleSideHangarDeparture } from '../simulation/StationApproach'
+import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY, sampleDepartureCompression, sampleDepartureLandingGear, sampleHangarLanding, sampleSideHangarLanding, type HangarLandingStage } from '../simulation/HangarLanding'
 import { createLandingGear } from './LandingGear'
 import { getHardwareScaling, spaceEffectsProfile } from './spaceEffectsProfile'
+import { GameLoadingScreen } from '../ui/GameLoadingScreen'
 
 interface GarageCanvasProps {
   language: GameLanguage
@@ -52,6 +53,7 @@ interface GarageCanvasProps {
 
 export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics, equippedPartRarities, hullFraction, startsLanded = false, entering = true, paused = false, departing = false, departureReady = false, onReady, onLanded, onLandingStageChange, onDeparted }: GarageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [sceneReady, setSceneReady] = useState(false)
   const enteringRef = useRef(entering)
   const pausedRef = useRef(paused)
   const onReadyRef = useRef(onReady)
@@ -164,8 +166,8 @@ export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics,
     apertureLight.range = 17
     apertureLight.intensity = .33
     createWorkshopDetails(scene, floorMaterial, trimMaterial, warmLight, coolLight)
-    if (surfacePlanet) createPlanetLandscape(scene, surfacePlanet, quality)
-    else createPlanetView(scene, glow, previewPlanet, graphics)
+    const surfaceLandscape = surfacePlanet ? createPlanetLandscape(scene, surfacePlanet, quality) : null
+    if (!surfacePlanet) createPlanetView(scene, glow, previewPlanet, graphics)
     canvas.dataset.surfacePlanet = surfacePlanet?.id ?? ''
 
     const ship = createShipVisual(scene, {
@@ -210,13 +212,14 @@ export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics,
       showHullDamage(ship, hullRef.current)
       const dt = Math.min(engine.getDeltaTime() / 1000, 0.1)
       idleElapsed += dt
+      surfaceLandscape?.update(dt)
       const transit = departureRef.current.departing || !hasLandedRef.current
       const pulse = transit ? .6 + .4 * Math.sin(idleElapsed * 5.6) ** 2 : .33
       apertureLight.intensity = .28 + pulse * .38
       for (const marker of portalSigns) marker.visibility = .35 + pulse * .65
       if (departureRef.current.departing && enteringRef.current && !pausedRef.current) {
         departureProgress = Math.min(departureRef.current.ready ? 1 : 0.82, departureProgress + Math.max(0, engine.getDeltaTime() / 1000) / HANGAR_DEPARTURE_DURATION)
-        const pose = sampleHangarDeparture(departureProgress)
+        const pose = surfacePlanet ? sampleSideHangarDeparture(departureProgress) : sampleHangarDeparture(departureProgress)
         const gear = sampleDepartureLandingGear(departureProgress)
         const compression = sampleDepartureCompression(departureProgress)
         landingGear.update(gear, compression)
@@ -240,7 +243,7 @@ export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics,
         landingStartedAt ??= performance.now()
         landingElapsed = Math.min(HANGAR_LANDING_DURATION, (performance.now() - landingStartedAt) / 1000)
         const p = landingElapsed / HANGAR_LANDING_DURATION
-        const pose = sampleHangarLanding(p)
+        const pose = surfacePlanet ? sampleSideHangarLanding(p) : sampleHangarLanding(p)
         landingGear.update(pose.gear, pose.compression)
         canvas.dataset.gearDeployment = pose.gear.toFixed(3)
         canvas.dataset.gearCompression = pose.compression.toFixed(4)
@@ -282,6 +285,7 @@ export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics,
     scene.executeWhenReady(() => {
       ready = true
       canvas.dataset.ready = 'true'
+      setSceneReady(true)
       onReadyRef.current?.()
     })
 
@@ -293,12 +297,15 @@ export function GarageCanvas({ language, surfacePlanet, previewPlanet, graphics,
   }, [weaponRarity, shieldRarity, engineRarity, armorRarity, reactorRarity, scannerRarity, surfacePlanet, previewPlanet, graphics])
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="garage-world"
-      aria-label={gameText(language).garageScene.view}
-      data-equipped-parts={SHIP_PART_SLOTS.filter((slot) => equippedPartRarities[slot]).join(',')}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="garage-world"
+        aria-label={gameText(language).garageScene.view}
+        data-equipped-parts={SHIP_PART_SLOTS.filter((slot) => equippedPartRarities[slot]).join(',')}
+      />
+      {!sceneReady && <GameLoadingScreen label={gameText(language).flight.preparingHangar} />}
+    </>
   )
 }
 

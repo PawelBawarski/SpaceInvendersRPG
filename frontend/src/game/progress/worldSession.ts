@@ -18,7 +18,7 @@ export function prepareWorld(progress: MissionProgress): MissionProgress {
   const migrated = { ...progress, orionLayoutVersion: ORION_LAYOUT_VERSION }
   if (progress.sectorId === ORION_SECTOR_ID && progress.orbitPlanetId) {
     const planet = ORION_PLANETS.find(site => site.id === progress.orbitPlanetId)
-    if (!planet?.orbitalFaction) return { ...migrated, orbitPlanetId: null }
+    if (!planet) return { ...migrated, orbitPlanetId: null }
     const distance = Math.hypot(progress.sectorX - planet.x, progress.sectorY - planet.y, progress.sectorDistance - planet.z)
     if (distance <= planet.radius || distance > planet.radius + PLANET_CONTACT_RANGE) {
       const { x, y, z } = orbitEntryPosition(planet)

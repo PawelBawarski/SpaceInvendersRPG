@@ -33,6 +33,15 @@ export function sampleHangarLanding(progress: number) {
   return { y: 1.3 + (HANGAR_CONTACT_Y - 1.3) * descent - compression * HANGAR_SHIP_SCALE, z: -9 + 10.5 * approach, gear, compression, approach, stage }
 }
 
+export function sampleSideHangarLanding(progress: number) {
+  const pose = sampleHangarLanding(progress)
+  return {
+    ...pose,
+    y: HANGAR_LANDED_Y - pose.compression * HANGAR_SHIP_SCALE,
+    z: -9 + 10.5 * pose.approach,
+  }
+}
+
 export function sampleDepartureCompression(progress: number): number {
   return LANDING_GEAR_GEOMETRY.loadedCompression * (1 - smooth(progress / 0.16))
 }

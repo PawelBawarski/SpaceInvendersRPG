@@ -68,6 +68,7 @@ describe('mission progress', () => {
       droneRespawns: {},
       shipVitals: null,
       completedMissions: [],
+      campaignEnding: null,
       missionObjectiveProgress: {},
       wardenDefeats: 0,
       meridianCore: 0,

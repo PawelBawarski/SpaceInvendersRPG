@@ -1,6 +1,6 @@
 import { formatText, gameText, type GameLanguage } from '../i18n'
 import { DAMAGE_TYPES, DAMAGE_TYPE_LABELS, getDamageResistance, MAX_DAMAGE_RESISTANCE, type ResistanceProfile } from '../domain/damageTypes'
-import './ShipResistanceReadout.css'
+import '../../styles/ui/ShipResistanceReadout.scss'
 
 interface ShipResistanceReadoutProps {
   resistances: ResistanceProfile

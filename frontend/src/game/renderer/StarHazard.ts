@@ -80,7 +80,7 @@ export function createSunVisual(scene: Scene, star: SolarHeatSource, quality: Gr
 
   const heatLight = new PointLight('orionSunHeatLight', root.position.clone(), scene)
   heatLight.diffuse = tint.scale(.95)
-  heatLight.intensity = 1.8
+  heatLight.intensity = 1.45
   heatLight.range = star.radius + star.heatRange
   heatLight.renderPriority = 3
   heatLight.setEnabled(false)

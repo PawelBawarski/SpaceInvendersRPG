@@ -12,7 +12,7 @@ import { PilotTraining } from './PilotTraining'
 import { IconButton } from './ActionIcon'
 import type { PilotSkillId } from '../progress/pilotSkills'
 import { BASE_RADAR_RANGE } from '../domain/flightRadar'
-import './ShipStatisticsPanel.css'
+import '../../styles/ui/ShipStatisticsPanel.scss'
 
 const ShipPreviewCanvas = lazy(() => import('../renderer/ShipPreviewCanvas').then(module => ({ default: module.ShipPreviewCanvas })))
 

@@ -14,6 +14,8 @@
     "test:e2e": "npm run test:e2e --workspace frontend",
     "lint": "npm run lint --workspace frontend",
     "backend:test": "node scripts/backend.mjs test",
-    "backend:dev": "node scripts/backend.mjs spring-boot:run"
+    "backend:dev": "node scripts/backend.mjs spring-boot:run",
+    "backend:package": "node scripts/backend.mjs package -DskipTests",
+    "package": "node scripts/package.mjs"
   }
 }

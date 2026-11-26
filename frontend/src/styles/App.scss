@@ -38,7 +38,7 @@
   position: fixed;
   z-index: -2;
   inset: 0;
-  background: linear-gradient(105deg,#050c16f7,#080e19cf), url('./assets/neon-void-debris-orbit.jpg') 70% center / cover no-repeat;
+  background: linear-gradient(105deg,#050c16f7,#080e19cf), url('../assets/neon-void-debris-orbit.jpg') 70% center / cover no-repeat;
   pointer-events: none;
 }
 
@@ -200,7 +200,7 @@
 
 .main-menu.title-screen::before {
   background: linear-gradient(90deg, #030609 0%, #030609ad 28%, #03060912 63%),
-    linear-gradient(0deg, #030609 0%, transparent 25%), url('./assets/neon-void-debris-orbit.jpg') 65% center / cover no-repeat;
+    linear-gradient(0deg, #030609 0%, transparent 25%), url('../assets/neon-void-debris-orbit.jpg') 65% center / cover no-repeat;
 }
 
 .title-screen .title-content {
@@ -252,7 +252,7 @@
 @media (max-width: 720px) {
   .main-menu.title-screen::before {
     background: linear-gradient(0deg,#030609 15%,#030609eb 48%,#03060933 79%),
-      url('./assets/neon-void-debris-orbit.jpg') 79% top / auto 77% no-repeat;
+      url('../assets/neon-void-debris-orbit.jpg') 79% top / auto 77% no-repeat;
   }
   .title-screen .title-content { justify-content: end; padding-block: min(40dvh, 340px) 31px; }
 }
@@ -1544,10 +1544,6 @@
   display: grid;
   min-height: 100vh;
   place-items: center;
-  color: #efad58;
-  background: #05070a;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
 }
 
 .game-shell {

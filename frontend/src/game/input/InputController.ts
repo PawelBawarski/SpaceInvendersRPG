@@ -50,6 +50,8 @@ const DEFAULT_MODIFIER_ALIASES: Partial<Record<FlightCommand, readonly string[]>
 export class InputController {
   private readonly keys = new Set<string>()
   private readonly taps = new Set<string>()
+  private interactionTap = false
+  private interactionAvailable = false
   private bindings: ControlBindings
   private readonly mouseAim = { yaw: 0, pitch: 0 }
   private lookPosition: { x: number; y: number } | undefined
@@ -61,6 +63,7 @@ export class InputController {
     if (this.suspended) return
     if (event.code === 'Space') event.preventDefault()
     if (!event.repeat && !this.keys.has(event.code)) {
+      if (event.code === 'KeyF') this.interactionTap = true
       for (const command of ['lights', 'overdrive'] as const) {
         if (this.bindings[command] === event.code) this.taps.add(event.code)
       }
@@ -100,7 +103,10 @@ export class InputController {
   }
   private readonly preventContextMenu = (event: MouseEvent) => {
     const surface = this.pointerSurface
-    if (surface && (!this.suspended || (event.target instanceof Node && surface.contains(event.target)))) event.preventDefault()
+    if (surface && event.target instanceof Node && surface.contains(event.target)) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
   }
   private readonly clearInput = () => {
     this.keys.clear()
@@ -110,6 +116,8 @@ export class InputController {
     this.lookPosition = undefined
     this.mouseAim.yaw = 0
     this.mouseAim.pitch = 0
+    this.interactionTap = false
+    this.interactionAvailable = false
   }
   private readonly canvas: HTMLCanvasElement | undefined
   private readonly pointerSurface: HTMLElement | undefined
@@ -146,6 +154,7 @@ export class InputController {
 
   isDown(command: FlightCommand): boolean {
     if (this.suspended) return false
+    if (command === 'fire' && this.interactionAvailable && this.bindings.fire === 'KeyF') return false
     if (this.keys.has(this.bindings[command])) return true
     if (this.bindings[command] !== DEFAULT_CONTROL_BINDINGS[command]) return false
     return DEFAULT_MODIFIER_ALIASES[command]?.some((code) => this.keys.has(code)) ?? false
@@ -158,6 +167,16 @@ export class InputController {
 
   consumeTap(command: 'lights' | 'overdrive'): boolean {
     return !this.suspended && this.taps.delete(this.bindings[command])
+  }
+
+  consumeInteractTap(): boolean {
+    const tapped = this.interactionTap
+    this.interactionTap = false
+    return !this.suspended && tapped
+  }
+
+  setInteractionAvailable(available: boolean): void {
+    this.interactionAvailable = available
   }
 
   updateSettings(bindings: ControlBindings, mouseSensitivity: number): void {

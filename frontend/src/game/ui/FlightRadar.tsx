@@ -3,12 +3,13 @@ import type { RadarBlip } from '../domain/flightRadar'
 import type { SectorPosition } from '../domain/exploration'
 import { IconButton } from './ActionIcon'
 
-export function FlightRadar({ language, galaxy, position, radius, blips, hasOverdrive, overdriveRemaining, onOverdrive }: {
+export function FlightRadar({ language, galaxy, position, radius, blips, zoneLevel, hasOverdrive, overdriveRemaining, onOverdrive }: {
   language: GameLanguage
   galaxy: string
   position: SectorPosition
   radius: number
   blips: readonly RadarBlip[]
+  zoneLevel: number
   hasOverdrive: boolean
   overdriveRemaining: number
   onOverdrive: () => void
@@ -19,6 +20,7 @@ export function FlightRadar({ language, galaxy, position, radius, blips, hasOver
   const text = gameText(language).radar
   return <aside className="flight-radar" aria-label={gameText(language).radar.tacticalRadar}>
     <header><strong>{gameText(language).radar.heading}</strong><span>{galaxy}</span></header>
+    <small className="radar-danger-zone">{formatText(text.dangerZone, { level: zoneLevel })}</small>
     <svg className="flight-radar-map" viewBox="0 0 100 100" aria-hidden="true">
       <path d="M6 50A44 44 0 0 1 94 50Z" className="radar-forward" />
       {[15, 30, 44].map(radius => <circle key={radius} cx="50" cy="50" r={radius} className="radar-grid"/>)}

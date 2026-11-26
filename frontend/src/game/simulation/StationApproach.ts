@@ -26,6 +26,20 @@ export function sampleHangarDeparture(progress: number) {
     fade: smooth((progress - 0.82) / 0.18), lift, forward, power: .34 * lift + .66 * smooth((progress - .35) / .52) }
 }
 
+export function sampleSideHangarDeparture(progress: number) {
+  const turn = smooth((progress - .07) / .38)
+  const forward = smooth((progress - .45) / .55)
+  return {
+    y: HANGAR_LANDED_Y,
+    z: 1.5 - 20 * forward,
+    yaw: Math.PI * turn,
+    fade: smooth((progress - 0.82) / 0.18),
+    lift: 0,
+    forward,
+    power: .3 + .7 * smooth((progress - .35) / .52),
+  }
+}
+
 /** Ship models face local +Z, including during station autopilot. */
 export function forwardRotation(direction: SectorPosition): { pitch: number; yaw: number } {
   return { pitch: -Math.atan2(direction.y, Math.hypot(direction.x, direction.z)), yaw: Math.atan2(direction.x, direction.z) }

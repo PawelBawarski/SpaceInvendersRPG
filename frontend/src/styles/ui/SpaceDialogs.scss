@@ -52,7 +52,8 @@
 .galaxy-chart-node[aria-pressed='true'] i, .galaxy-chart-node:hover:not(:disabled) i { outline: 2px solid currentColor; outline-offset: 4px; }
 .galaxy-chart-node small { font-size: 12px; color: #e0edf5; }
 .hyperspace-overlay { position: absolute; inset: 0; z-index: 27; display: grid; place-items: end center; padding: 0 12px clamp(50px, 14vh, 120px); pointer-events: auto; background: radial-gradient(ellipse, transparent 12%, #153f745f 70%, #040c2a); animation: hyperspace-vignette .8s ease-out both; }
-.hyperspace-readout { min-width: min(300px, 100%); display: grid; gap: 6px; padding: 12px 16px; border: 1px solid #79b4d5; background: #081629ee; border-radius: 8px; text-align: center; }
+.hyperspace-readout { position: relative; min-width: min(300px, 100%); display: grid; gap: 6px; padding: 12px 16px; border: 1px solid #79b4d5; background: #081629ee; border-radius: 8px; text-align: center; }
+.hyperspace-cancel { position: absolute; top: 7px; right: 7px; }
 .hyperspace-readout > span { color: #c3e7fc; font-size: 13px; }
 .hyperspace-readout strong { color: #f1f9ff; font-size: 17px; }
 .hyperspace-progress { display: block; margin-top: 5px; height: 3px; background: linear-gradient(90deg, #6db7f2, #dff9ff); transform-origin: left; animation: hyperspace-progress linear both; }

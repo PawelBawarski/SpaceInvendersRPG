@@ -1,8 +1,9 @@
-import { Color3, DynamicTexture, Mesh, MeshBuilder, Scene, StandardMaterial, VertexData } from './babylon'
+import { Color3, DynamicTexture, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode, VertexData } from './babylon'
 import type { PlanetSite } from '../domain/exploration'
 import type { GraphicsQuality } from '../progress/gameSettings'
 
 const REGOLITH_REPEAT_METERS = 13
+const SURFACE_ECOSYSTEM = { lowFlora: 7, standardFlora: 12, highFlora: 18, lowFauna: 2, standardFauna: 4, highFauna: 6 } as const
 
 function mineralNoise(u: number, v: number, cells: number, seed: number) {
   const x = u * cells
@@ -106,8 +107,86 @@ export function createPlanetLandscape(scene: Scene, planet: PlanetSite, quality:
   moon.material = moonMaterial
   moon.isPickable = false
   moon.freezeWorldMatrix()
-  scene.metadata = { ...scene.metadata, surfacePlanetId: planet.id }
-  return { ground, sky, regolith }
+  const ecosystem = createSurfaceEcosystem(scene, planet, quality)
+  scene.metadata = { ...scene.metadata, surfacePlanetId: planet.id, surfaceLifePresent: ecosystem.present }
+  return { ground, sky, regolith, lifePresent: ecosystem.present, update: ecosystem.update }
+}
+
+function createSurfaceEcosystem(scene: Scene, planet: PlanetSite, quality: GraphicsQuality) {
+  const idSeed = [...planet.id].reduce((sum, character) => (sum * 31 + character.charCodeAt(0)) >>> 0, 17)
+  const supportsLife = idSeed % 3 === 0 || ['nacre-reef', 'sable-garden', 'pale-sanctum'].includes(planet.id)
+  if (!supportsLife) return { present: false, update: (_dt: number) => {} }
+  let seed = idSeed || 1
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000 }
+  const floraCount = quality === 'low' ? SURFACE_ECOSYSTEM.lowFlora : quality === 'high' ? SURFACE_ECOSYSTEM.highFlora : SURFACE_ECOSYSTEM.standardFlora
+  const faunaCount = quality === 'low' ? SURFACE_ECOSYSTEM.lowFauna : quality === 'high' ? SURFACE_ECOSYSTEM.highFauna : SURFACE_ECOSYSTEM.standardFauna
+  const plantMaterial = new StandardMaterial(`surfaceFlora-${planet.id}`, scene)
+  plantMaterial.diffuseColor = Color3.Lerp(Color3.FromHexString('#49aa85'), Color3.FromHexString(planet.color), .28)
+  plantMaterial.emissiveColor = plantMaterial.diffuseColor.scale(.18)
+  plantMaterial.specularColor = Color3.Black()
+  const creatureMaterial = new StandardMaterial(`surfaceFauna-${planet.id}`, scene)
+  creatureMaterial.diffuseColor = Color3.Lerp(Color3.FromHexString('#67c9d2'), Color3.FromHexString(planet.color), .22)
+  creatureMaterial.emissiveColor = creatureMaterial.diffuseColor.scale(.12)
+  creatureMaterial.specularColor = new Color3(.16, .2, .22)
+  const plants: TransformNode[] = []
+  const creatures: { root: TransformNode; x: number; z: number; phase: number; radius: number; speed: number }[] = []
+  for (let index = 0; index < floraCount; index++) {
+    const angle = random() * Math.PI * 2
+    const radius = 110 + random() * 620
+    const plant = new TransformNode(`surfaceFlora-${planet.id}-${index}`, scene)
+    plant.position.set(Math.cos(angle) * radius, -1.05, Math.sin(angle) * radius)
+    const stalks = quality === 'low' ? 2 : 3
+    for (let stalk = 0; stalk < stalks; stalk++) {
+      const height = .9 + random() * 2.1
+      const crystal = MeshBuilder.CreateCylinder(`surfaceCrystal-${index}-${stalk}`, {
+        height, diameterTop: .025, diameterBottom: .18 + random() * .16, tessellation: 5,
+      }, scene)
+      crystal.parent = plant
+      crystal.position.set((random() - .5) * .32, height * .5, (random() - .5) * .32)
+      crystal.rotation.z = (random() - .5) * .36
+      crystal.material = plantMaterial
+      crystal.isPickable = false
+    }
+    plants.push(plant)
+  }
+  for (let index = 0; index < faunaCount; index++) {
+    const angle = random() * Math.PI * 2
+    const radius = 150 + random() * 520
+    const x = Math.cos(angle) * radius
+    const z = Math.sin(angle) * radius
+    const root = new TransformNode(`surfaceFauna-${planet.id}-${index}`, scene)
+    const body = MeshBuilder.CreateSphere(`faunaBody-${index}`, { diameter: .72, segments: quality === 'low' ? 6 : 10 }, scene)
+    body.parent = root
+    body.scaling.set(1.45, .72, .9)
+    body.material = creatureMaterial
+    const head = MeshBuilder.CreateSphere(`faunaSensor-${index}`, { diameter: .37, segments: 8 }, scene)
+    head.parent = root
+    head.position.set(0, .12, .45)
+    head.material = creatureMaterial
+    for (const side of [-1, 1]) {
+      const feeler = MeshBuilder.CreateCylinder(`faunaFeeler-${index}-${side}`, { height: .33, diameterTop: .025, diameterBottom: .05, tessellation: 5 }, scene)
+      feeler.parent = root
+      feeler.position.set(side * .16, .3, .57)
+      feeler.rotation.z = side * -.4
+      feeler.material = plantMaterial
+    }
+    for (const mesh of root.getChildMeshes()) mesh.isPickable = false
+    creatures.push({ root, x, z, phase: random() * Math.PI * 2, radius: 14 + random() * 34, speed: .12 + random() * .1 })
+  }
+  let elapsed = 0
+  return {
+    present: true,
+    update(dt: number) {
+      elapsed += Math.max(0, dt)
+      plants.forEach((plant, index) => { plant.rotation.z = Math.sin(elapsed * .7 + index * .9) * .045 })
+      for (const creature of creatures) {
+        const phase = elapsed * creature.speed + creature.phase
+        creature.root.position.set(creature.x + Math.cos(phase) * creature.radius, 2 + Math.sin(phase * 2) * .8,
+          creature.z + Math.sin(phase) * creature.radius)
+        creature.root.rotation.y = -phase
+      }
+    },
+  }
 }
 
 function createSurfaceRelief(scene: Scene, tint: Color3, quality: GraphicsQuality) {

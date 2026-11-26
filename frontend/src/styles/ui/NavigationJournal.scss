@@ -122,12 +122,27 @@
 .journal-mission footer { display: flex; gap: 6px 10px; justify-content: space-between; flex-wrap: wrap; color: #aecada; font-size: 11px; }
 .journal-mission footer small { font-size: inherit; }
 .journal-mission footer > span { color: #f7ce95; }
+.journal-mission.is-locked { border-color: #263a49; background: linear-gradient(112deg, #101923, #09121b); }
+.journal-mission.is-locked h3 { color: #a7bac5; }
+.journal-mission.is-locked .journal-mission-tags small { color: #cfad7b; white-space: normal; text-align: right; }
 .journal-track { display: grid; justify-items: center; min-width: 64px; padding: 5px; color: #c6efff; border: 1px solid #405e76; border-radius: 5px; background: #102537; }
 .journal-track > span { font-size: 17px; line-height: 1.1; }
 .journal-track small { font-size: 11px; }
 .journal-track:hover:not(:disabled) { background: #20455b; }
 .journal-track:disabled { color: #e0c4a1; border-color: #645240; background: #252725; }
 .journal-empty { margin: 6px; font-size: 14px; color: #bfd4e1; }
+.journal-chapter, .journal-ending, .journal-postgame { flex: 0 0 auto; border: 1px solid #3a596e; border-inline-start: 3px solid #d9ae72; border-radius: 6px; padding: 10px 12px; background: linear-gradient(120deg, #1a2d3b, #0c1721); }
+.journal-chapter > span, .journal-ending > span, .journal-postgame > span { color: #eac38f; font: 10px/1.4 var(--font-mono, monospace); letter-spacing: .1em; }
+.journal-chapter h3, .journal-ending h3, .journal-postgame h3 { margin: 4px 0; color: #f1f7fa; font-size: 16px; }
+.journal-chapter p, .journal-ending p, .journal-postgame p { margin: 4px 0 7px; color: #c0d4df; font-size: 12px; line-height: 1.45; }
+.journal-chapter > strong { color: #a9e2ee; font-size: 12px; }
+.journal-ending { max-height: min(46vh, 420px); overflow-y: auto; }
+.journal-ending-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.journal-ending-choices button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 82px; padding: 8px; color: #e7f1f5; text-align: left; border: 1px solid #536b79; border-radius: 5px; background: #10202b; cursor: pointer; }
+.journal-ending-choices button:hover { border-color: #e2b477; background: #1a303c; }
+.journal-ending-choices strong { color: #f0c58f; font-size: 12px; }
+.journal-ending-choices small, .journal-postgame > small { color: #b9cbd5; font-size: 11px; line-height: 1.4; }
+.journal-postgame { border-inline-start-color: #78d5bd; }
 
 @media (max-height: 560px) and (min-width: 721px) {
   .navigation-journal { padding-block: 10px; gap: 9px; }
@@ -147,4 +162,5 @@
   .journal-layout[data-pane='ports'] .journal-harbours { display: flex; }
   .journal-star-chart { flex: 1; grid-template-rows: minmax(0, 1fr) auto; }
   .journal-star-chart svg { height: 100%; }
+  .journal-ending-choices { grid-template-columns: minmax(0, 1fr); }
 }

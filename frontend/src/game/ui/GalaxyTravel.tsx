@@ -2,19 +2,21 @@ import { gameText, type GameLanguage } from '../i18n'
 import { useState } from 'react'
 import { GALAXIES, HYPERSPACE_SECONDS, type Galaxy, type GalaxyId } from '../domain/galaxyChart'
 import { IconButton } from './ActionIcon'
-import './SpaceDialogs.css'
+import '../../styles/ui/SpaceDialogs.scss'
 
-export function GalaxyTravel({ language, origin, jumpingTo, onClose, onJump }: {
+export function GalaxyTravel({ language, origin, jumpingTo, onClose, onCancelJump, onJump }: {
   language: GameLanguage
   origin: Galaxy
   jumpingTo: Galaxy | null
   onClose: () => void
+  onCancelJump: () => void
   onJump: (destination: GalaxyId) => void
 }) {
   const [target, setTarget] = useState<Galaxy | null>(null)
 
   if (jumpingTo) return <div className="hyperspace-overlay" role="status">
     <div className="hyperspace-readout">
+      <IconButton icon="close" className="hyperspace-cancel" onClick={onCancelJump} label={gameText(language).travel.cancelJump} />
       <span>{gameText(language).travel.hyperspaceTransit}</span>
       <strong>{origin.name} <span aria-hidden="true">→</span> {jumpingTo.name}</strong>
       <i className="hyperspace-progress" aria-hidden="true" style={{ animationDuration: `${HYPERSPACE_SECONDS}s` }} />

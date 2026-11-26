@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MeshBuilder, NullEngine, Scene, Vector3 } from '@babylonjs/core'
 import { createWorldShip, getGalaxyWorld, ORION_DRONES, ORION_PLANETS, type GalaxyWorld } from '../domain/exploration'
-import { buildMissionHostiles, getMission, MISSIONS, type MissionId } from '../missions/definitions'
+import { buildMissionHostiles, CAMPAIGN_MISSION_ORDER, getMission, MISSIONS, type MissionId } from '../missions/definitions'
 import { completeWorldMission, createEmptyMissionProgress, recordMissionObjectiveProgress, type MissionProgress } from '../progress/missionProgress'
 import { createWorldCombat, type WorldCombatInput } from './WorldCombat'
 import { BOSS_RAGE_HULL_FRACTION, getBossManeuver, getEnemyManeuver, RETREAT_HULL_FRACTION } from '../domain/enemyManeuvers'
@@ -39,6 +39,18 @@ function setup(initial = createEmptyMissionProgress(), world?: GalaxyWorld) {
     firing: false, bonuses: { damagePercent: 0, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }, weaponRarity: 'standard', ...options,
   })
   return { combat, scene, update, hit, complete, advance, defeated, impact, contact, aim, getProgress: () => progress }
+}
+
+function progressWithMissionUnlocked(missionId: MissionId): MissionProgress {
+  const index = CAMPAIGN_MISSION_ORDER.indexOf(missionId)
+  return { ...createEmptyMissionProgress(), completedMissions: [...CAMPAIGN_MISSION_ORDER.slice(0, index)] }
+}
+
+function sightAt(origin: Vector3, target: Vector3) {
+  const direction = target.subtract(origin)
+  if (direction.lengthSquared() < .0001) direction.set(0, 0, 1)
+  direction.normalize()
+  return { origin, direction, convergence: origin.add(direction.scale(PLAYER_WEAPON.sightConvergence)) }
 }
 
 describe('physical world encounters', () => {
@@ -79,7 +91,7 @@ describe('physical world encounters', () => {
     const target = scene.getTransformNodeByName(drone.id)!
     const pieces = target.getChildMeshes()
     expect(aim).toHaveBeenLastCalledWith(target)
-    for (let frame = 0; frame < 5 && !impact.mock.calls.length; frame++) update(origin, { sight, firing: true }, .04)
+    for (let frame = 0; frame < 50 && !pieces.some(mesh => mesh.name.startsWith('hull-damage-') && mesh.isEnabled()); frame++) update(origin, { sight, firing: true }, .04)
     expect(impact).toHaveBeenCalled()
     expect(pieces.some(mesh => mesh.name.startsWith('hull-damage-') && mesh.isEnabled())).toBe(true)
     update(origin)
@@ -131,9 +143,9 @@ describe('physical world encounters', () => {
     expect(bossCombat.combat.getStatus().boss).toMatchObject({ health: bossVitals!.health, shield: bossVitals!.shield })
   })
 
-  it('flies roaming trios along the same route with stable wing spacing', () => {
+  it('keeps a pursuing wing cohesive while its members maneuver independently', () => {
     const { combat, update, scene } = setup()
-    const player = new Vector3(-600, 600, 9200)
+    const player = new Vector3(-600, 3000, 9200)
     update(player)
     const nodes = () => scene.transformNodes.filter(node => node.metadata?.formationId === 'squadron-1')
     expect(nodes()).toHaveLength(3)
@@ -142,10 +154,7 @@ describe('physical world encounters', () => {
     expect(combat.getPerformanceStats().patrolGroups).toBe(new Set(ORION_DRONES.flatMap(site => site.formation ? [site.formation.id] : [])).size)
     const after = nodes()
     expect(Vector3.Distance(before[0], after[0].position)).toBeGreaterThan(60)
-    for (let index = 1; index < 3; index++) {
-      expect(Vector3.Distance(after[0].position, after[index].position)).toBeCloseTo(Vector3.Distance(before[0], before[index]), 4)
-      expect(after[index].rotation.y).toBeCloseTo(after[0].rotation.y)
-    }
+    for (let index = 1; index < 3; index++) expect(Vector3.Distance(after[0].position, after[index].position)).toBeLessThan(220)
   })
 
   it('alerts the whole trio when only a wingman is within engagement range', () => {
@@ -176,7 +185,7 @@ describe('physical world encounters', () => {
     expect(stats.boltActorBoundsChecks).toBe(0)
     expect(stats.boltActorExactChecks).toBe(0)
     expect(stats.boltMeshAllocations).toBeLessThanOrEqual(32)
-    expect(stats.boltMeshReuses).toBeGreaterThan(400)
+    expect(stats.boltMeshReuses).toBeGreaterThan(PLAYER_WEAPON.projectilesPerVolley * 60)
     for (let frame = 0; frame < 40; frame++) update(position)
     const idle = combat.getPerformanceStats()
     expect(idle.activeBolts).toBe(0)
@@ -203,30 +212,35 @@ describe('physical world encounters', () => {
 
   it('completes an orbital mission by defeating its whole fleet around the planet', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
-    const { combat, update, complete, getProgress } = setup()
+    const { combat, update, complete, getProgress } = setup(progressWithMissionUnlocked('glass-orbit'))
     const planet = ORION_PLANETS[0]
     let position = new Vector3(planet.x, planet.y, planet.z - planet.radius - 150)
-    for (let frame = 0; frame < 240; frame++) {
+    for (let frame = 0; frame < 480; frame++) {
       const target = combat.getNavigationTarget('glass-orbit', position)
       if (!target) break
       position = target.subtract(new Vector3(0, 0, 30))
-      update(position, { firing: true, bonuses: { damagePercent: 200, shieldPoints: 0, hullPoints: 0, enginePercent: 0 } })
+      update(position, { firing: true, sight: sightAt(position, target), bonuses: { damagePercent: 200, shieldPoints: 0, hullPoints: 0, enginePercent: 0 } })
     }
     expect(getProgress().missionObjectiveProgress['glass-orbit']).toBe(6)
     expect(complete).toHaveBeenCalledExactlyOnceWith('glass-orbit')
     expect(combat.getNavigationTarget('glass-orbit', position)).toBeNull()
   })
-  it('starts outside combat and exposes a distant boss without completing earlier missions', () => {
-    const { combat, update } = setup()
-    update(Vector3.Zero())
-    expect(combat.getStatus().engaged).toBe(false)
-    expect(combat.getStatus().boss).toBeNull()
+  it('keeps the final boss locked until the campaign prerequisites are complete', () => {
+    const locked = setup()
+    locked.update(Vector3.Zero())
+    expect(locked.combat.getStatus().engaged).toBe(false)
+    expect(locked.combat.getStatus().boss).toBeNull()
     const mission = getMission('meridian-warlord')
     const site = mission.worldPosition
+    locked.update(new Vector3(site.x, site.y, site.z - 500))
+    expect(locked.combat.getStatus().mission).toBeNull()
+    expect(locked.combat.getNavigationTarget(mission.id, Vector3.Zero())).toBeNull()
+
+    const { combat, update } = setup(progressWithMissionUnlocked(mission.id))
     update(new Vector3(site.x, site.y, site.z - 500))
     expect(combat.getStatus().mission?.id).toBe(mission.id)
-    expect(combat.getStatus().boss?.maximumHealth).toBe(mission.bossProfile?.health)
-    expect(combat.getStatus().boss?.maximumShield).toBe(mission.bossProfile?.shield)
+    expect(combat.getStatus().boss?.maximumHealth).toBeGreaterThan(mission.bossProfile!.health)
+    expect(combat.getStatus().boss?.maximumShield).toBeGreaterThan(mission.bossProfile!.shield)
   })
 
   it('keeps a completed boss and its escorts absent when returning to the world', () => {
@@ -245,7 +259,8 @@ describe('physical world encounters', () => {
     for (let frame = 0; frame < 110; frame++) update(position)
     expect(combat.getStatus().boss).not.toBeNull()
     expect(combat.getStatus().engaged).toBe(true)
-    expect(hit).toHaveBeenCalledWith(getMission('warden').bossProfile?.damage, expect.objectContaining({ kind: 'weapon', label: getMission('warden').title }))
+    expect(hit).toHaveBeenCalledWith(expect.any(Number), expect.objectContaining({ kind: 'weapon', label: getMission('warden').title }))
+    expect(hit.mock.calls.some(([amount]) => amount > getMission('warden').bossProfile!.damage)).toBe(true)
   })
 
   it('carries shield damage into hull and completes a boss only once', () => {
@@ -254,7 +269,11 @@ describe('physical world encounters', () => {
     const site = getMission('warden').worldPosition
     const position = new Vector3(site.x, site.y, site.z - 100)
     const bonuses = { damagePercent: 500, shieldPoints: 0, hullPoints: 0, enginePercent: 0 }
-    for (let frame = 0; frame < 100; frame++) update(position, { firing: true, bonuses })
+    for (let frame = 0; frame < 600 && !complete.mock.calls.some(([id]) => id === 'warden'); frame++) {
+      const target = combat.getNavigationTarget('warden', position)
+      if (!target) break
+      update(position, { firing: true, sight: sightAt(position, target), bonuses })
+    }
     expect(complete.mock.calls.filter(([id]) => id === 'warden')).toHaveLength(1)
     expect(combat.getStatus().boss).toBeNull()
   })
@@ -264,14 +283,20 @@ describe('physical world encounters', () => {
     const mission = getMission('signal-source')
     const escort = buildMissionHostiles(mission)[0]
     expect(escort).toBeDefined()
-    const { update, defeated } = setup()
+    const { combat, update, defeated } = setup(progressWithMissionUnlocked('signal-source'))
     const position = new Vector3(escort.x, escort.y, escort.z - 24)
-    for (let frame = 0; frame < 23; frame++) update(position, { firing: true })
+    for (let frame = 0; frame < 100 && !defeated.mock.calls.some(([id]) => id === escort.id); frame++) {
+      const target = combat.getNameplateTargets().find(actor => actor.id === escort.id)?.position ?? new Vector3(escort.x, escort.y, escort.z)
+      update(position, {
+        firing: true, sight: sightAt(position, target),
+        bonuses: { damagePercent: 500, shieldPoints: 0, hullPoints: 0, enginePercent: 0 },
+      })
+    }
     expect(defeated).toHaveBeenCalledWith(escort.id)
   })
 
   it('restores the next salvage marker from progress and rewards all three boxes once', () => {
-    const initial = recordMissionObjectiveProgress(createEmptyMissionProgress(), 'silent-signal', 1)
+    const initial = recordMissionObjectiveProgress(progressWithMissionUnlocked('silent-signal'), 'silent-signal', 1)
     const { combat, update, advance, complete } = setup(initial)
     const center = getMission('silent-signal').worldPosition
     const later = new Vector3(center.x + 35, center.y, center.z + 48)

@@ -16,7 +16,8 @@ import { HANGAR_LANDED_Y, HANGAR_SHIP_SCALE, LANDING_GEAR_GEOMETRY } from '../si
 import { RECOVERY_COMPLETE_MASK, RECOVERY_LAUNCH_DURATION, sampleRecoveryLaunch } from '../simulation/ShipRecovery'
 import { BASE_SHIP_VITALS, FIRST_FLIGHT_VITALS } from '../domain/shipTelemetry'
 import { LaunchDiagnostics } from './LaunchDiagnostics'
-import './ShipRecovery.css'
+import '../../styles/ui/ShipRecovery.scss'
+import { GameLoadingScreen } from './GameLoadingScreen'
 
 const WRECK_HULL_FRACTION = .24
 
@@ -39,6 +40,7 @@ interface Props {
   planet: PlanetSite
   graphics: GraphicsSettings
   language: GameLanguage
+  worldSeed: number
   repairMask: number
   launching: boolean
   worldReady: boolean
@@ -55,6 +57,7 @@ export function ShipRecovery(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [discovered, setDiscovered] = useState(false)
   const [launchProgress, setLaunchProgress] = useState(0)
+  const [sceneReady, setSceneReady] = useState(false)
   useEffect(() => { live.current = props }, [props])
   useEffect(() => {
     const canvas = canvasRef.current
@@ -164,6 +167,7 @@ export function ShipRecovery(props: Props) {
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(0.1, engine.getDeltaTime() / 1000)
       const current = live.current
+      landscape.update(dt)
       showHullDamage(ship, current.repairMask === RECOVERY_COMPLETE_MASK ? FIRST_FLIGHT_VITALS.hull / BASE_SHIP_VITALS.hull : WRECK_HULL_FRACTION)
       elapsed += dt
       uiClock += dt
@@ -196,7 +200,7 @@ export function ShipRecovery(props: Props) {
     })
     const resize = () => engine.resize()
     window.addEventListener('resize', resize)
-    scene.executeWhenReady(() => { canvas.dataset.ready = 'true' })
+    scene.executeWhenReady(() => { canvas.dataset.ready = 'true'; setSceneReady(true) })
     engine.runRenderLoop(() => scene.render())
     return () => {
       window.removeEventListener('resize', resize)
@@ -207,11 +211,19 @@ export function ShipRecovery(props: Props) {
   }, [planet])
   return <main className="ship-recovery" aria-label={gameText(language).recovery.shipDiscoveryAndRepair}>
     <canvas ref={canvasRef} className="recovery-canvas" aria-label={gameText(language).recovery.shipOnPlanetarySurface} />
+    {!sceneReady && <GameLoadingScreen label={gameText(language).application.loadingTheSurface} />}
     <header><span>MERIDIAN / {planet.name[language]}</span><h1>{launching ? (gameText(language).recovery.intoTheStars) : discovered ? (gameText(language).recovery.sheWillFlyAgain) : (gameText(language).recovery.aSignalInTheDust)}</h1>
       <p>{launching ? (gameText(language).recovery.vantaTakesBackTheSky) : discovered ? (gameText(language).recovery.youFoundVantaRestoreTheConnections) : (gameText(language).recovery.aLoneMechanicAnAbandonedScout)}</p>
     </header>
     {!launching && <IconButton icon="close" className="recovery-exit" onClick={onExit} label={gameText(language).recovery.returnToMenu} />}
-    {discovered && !launching && <LaunchDiagnostics mask={repairMask} language={language} onRepair={onRepair} onLaunch={onLaunch} />}
+    {discovered && !launching && <aside className="recovery-log" aria-label={gameText(language).application.copy.prologueTitle}>
+      <span>{gameText(language).application.copy.prologueKicker}</span>
+      <h2>{gameText(language).application.copy.prologueTitle}</h2>
+      <p>{gameText(language).application.copy.prologueStory}</p>
+      <blockquote>{gameText(language).application.copy.prologueTransmission}</blockquote>
+      <strong>{gameText(language).application.copy.prologueObjective}</strong>
+    </aside>}
+    {discovered && !launching && <LaunchDiagnostics mask={repairMask} language={language} seed={props.worldSeed} onRepair={onRepair} onLaunch={onLaunch} />}
     {launching && <div className="recovery-launch-status" role="status"><span>{gameText(language).recovery.surfaceDeparture}</span><div role="progressbar" aria-label={gameText(language).recovery.launchProgress} aria-valuenow={Math.round(launchProgress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${launchProgress * 100}%` }}/></div></div>}
     <div className="recovery-fade" style={{ opacity: sampleRecoveryLaunch(launchProgress).fade }} aria-hidden="true" />
   </main>

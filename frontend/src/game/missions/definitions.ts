@@ -4,6 +4,11 @@ import { createWorldShip } from '../domain/worldFactions'
 import { BOSS_ESCORT_ORBIT, BOSS_VISUAL_SCALE } from '../domain/enemyScale'
 
 export type MissionId = 'warden' | 'silent-signal' | 'signal-source' | 'veil-survey' | 'patrol-hunt' | 'null-choir' | 'glass-orbit' | 'nacre-ambush' | 'ashen-carrier' | 'forge-orbit' | 'cult-convergence' | 'meridian-warlord'
+export type CampaignEndingId = 'rebuild' | 'seal' | 'command'
+export const CAMPAIGN_MISSION_ORDER: readonly MissionId[] = [
+  'warden', 'silent-signal', 'signal-source', 'veil-survey', 'patrol-hunt', 'null-choir',
+  'glass-orbit', 'nacre-ambush', 'ashen-carrier', 'forge-orbit', 'cult-convergence', 'meridian-warlord',
+]
 export type MissionObjective = 'destroy-warden' | 'recover-fragments' | 'disable-signal' | 'survey-planet' | 'destroy-patrol' | 'orbital-sweep' | 'clear-squadron'
 export type MissionSectorTarget = { type: 'planet'; id: string } | { type: 'drone'; id: string }
 export interface BossCombatProfile {
@@ -27,6 +32,8 @@ export interface CampaignProgress {
   wardenDefeats: number; silentSignalRuns: number; signalSourceRuns: number
   veilSurveyRuns: number; patrolHuntRuns: number; nullChoirRuns: number
   completedMissions?: readonly MissionId[]
+  initialRepairRequired?: boolean
+  campaignEnding?: CampaignEndingId | null
 }
 
 const MISSION_SITES: readonly MissionDefinition[] = [
@@ -336,8 +343,24 @@ export function isMissionComplete(progress: CampaignProgress, id: MissionId): bo
   return (legacy[id] ?? 0) > 0
 }
 
+export function isMissionUnlocked(progress: CampaignProgress, id: MissionId): boolean {
+  if (progress.initialRepairRequired) return false
+  const index = CAMPAIGN_MISSION_ORDER.indexOf(id)
+  return index >= 0 && CAMPAIGN_MISSION_ORDER.slice(0, index).every(previous => isMissionComplete(progress, previous))
+}
+
+export function getMissionPrerequisite(id: MissionId): MissionId | null {
+  const index = CAMPAIGN_MISSION_ORDER.indexOf(id)
+  return index > 0 ? CAMPAIGN_MISSION_ORDER[index - 1] : null
+}
+
+export function isCampaignComplete(progress: CampaignProgress): boolean {
+  return CAMPAIGN_MISSION_ORDER.every(id => isMissionComplete(progress, id))
+}
+
 export function getNextCampaignMission(progress: CampaignProgress): MissionId | null {
-  return MISSIONS.find(mission => !isMissionComplete(progress, mission.id))?.id ?? null
+  if (progress.initialRepairRequired) return null
+  return CAMPAIGN_MISSION_ORDER.find(id => !isMissionComplete(progress, id)) ?? null
 }
 
 export function getMission(id: MissionId): MissionDefinition {

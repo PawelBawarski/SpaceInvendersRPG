@@ -36,6 +36,7 @@ export interface DroneSite extends SectorPosition {
   attackRange?: number
   projectileSpeed?: number
   speed?: number
+  level?: number
   missionId?: MissionId
   formation?: PatrolFormation
 }
@@ -391,7 +392,7 @@ const PREVIOUS_ORION_DRONES: readonly DroneSite[] = [
 const FLEET_FACTIONS: readonly FactionId[] = ['meridian', 'nacre', 'null-cult', 'ashen-legion']
 const FLEET_ARCHETYPES: readonly ShipArchetype[] = ['scout', 'interceptor', 'bomber', 'frigate']
 
-function buildWorldFleet(): DroneSite[] { return [
+function buildWorldFleet(seed = 61483): DroneSite[] { return [
   ...PREVIOUS_ORION_DRONES.map((site, index) => ({
     ...createWorldShip(site.id, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[index % 4], {
       x: site.x * 10, y: site.y * 10, z: site.z * 10,
@@ -447,7 +448,7 @@ function buildWorldFleet(): DroneSite[] { return [
       formation,
     }
   }),
-  ...buildDeepSpacePopulation(ORION_PLANETS, ALL_HANGARS, ORION_SUN),
+  ...buildDeepSpacePopulation(ORION_PLANETS, ALL_HANGARS, ORION_SUN, seed),
 ] }
 
 export let ORION_DRONES: readonly DroneSite[] = buildWorldFleet()
@@ -456,7 +457,7 @@ export function activateGalaxy(seed: number) {
   ORION_PLANETS = buildOrionPlanets(seed)
   PLANET_HANGARS = buildPlanetHangars(ORION_PLANETS)
   ALL_HANGARS = [...ORION_STATIONS, ...PLANET_HANGARS]
-  ORION_DRONES = buildWorldFleet()
+  ORION_DRONES = buildWorldFleet(seed)
 }
 
 export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld {
@@ -486,7 +487,7 @@ export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld 
     color: [planet.color, galaxy.color, galaxy.sunColor][index % 3],
   }))
   const stations = [...ports, ...buildPlanetHangars(planets)]
-  const drones = buildDeepSpacePopulation(planets, stations, sun).map(drone => ({ ...drone, id: `${id}-${drone.id}` }))
+  const drones = buildDeepSpacePopulation(planets, stations, sun, seed).map(drone => ({ ...drone, id: `${id}-${drone.id}` }))
   return { galaxy, bounds: GALAXY_BOUNDS, planets, stations, drones, sun, merchant: { ...merchant, x: merchant.x * side } }
 }
 
