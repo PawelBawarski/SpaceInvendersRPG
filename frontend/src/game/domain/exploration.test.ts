@@ -51,7 +51,7 @@ describe('sector exploration', () => {
   })
 
   it('retains the authored inner worlds and large planetary radii in the thinner chart', () => {
-    expect(ORION_PLANETS[0]).toMatchObject({ id: 'glass-moon', radius: 5184, x: 0, y: 0 })
+    expect(ORION_PLANETS[0]).toMatchObject({ id: 'glass-moon', radius: 6480, x: 0, y: 0 })
     expect(ORION_PLANETS).toHaveLength(47)
     expect(ORION_DRONES.length).toBeGreaterThan(4000)
     expect(new Set(ORION_DRONES.map(ship => ship.faction)).size).toBe(4)
@@ -104,7 +104,7 @@ describe('sector exploration', () => {
 
   it('puts a reachable distant sun beyond the populated routes and its heat zone outside settlements', () => {
     expect(distanceBetween({ x: 0, y: 0, z: 0 }, ORION_SUN)).toBeGreaterThan(380000)
-    expect(ORION_SUN.radius).toBe(576000)
+    expect(ORION_SUN.radius).toBe(720000)
     expect(ORION_SUN.heatRange).toBe(20000)
     expect(ORION_SUN.z + ORION_SUN.radius).toBeLessThan(ORION_SECTOR_BOUNDS.maxZ)
     expect(ORION_SUN.x + ORION_SUN.radius).toBeLessThan(ORION_SECTOR_BOUNDS.maxX)

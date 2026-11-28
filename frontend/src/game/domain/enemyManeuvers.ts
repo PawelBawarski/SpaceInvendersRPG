@@ -5,6 +5,7 @@ const TACTICS: Record<ShipArchetype, { distance: number; strafe: number; lift: n
   interceptor: { distance: .56, strafe: .94, lift: .31, shield: .18, mass: 1 },
   bomber: { distance: .72, strafe: .3, lift: .16, shield: .24, mass: 1.45 },
   frigate: { distance: .79, strafe: .18, lift: .04, shield: .34, mass: 2.3 },
+  monster: { distance: .5, strafe: .66, lift: .42, shield: 0, mass: 1.2 },
 }
 
 export const ENEMY_SHIELD_DELAY = 4.8
@@ -12,6 +13,19 @@ export const SHIP_CONTACT_COOLDOWN = .72
 export const PLAYER_CONTACT_RADIUS = 2.35
 export const RETREAT_HULL_FRACTION = .30
 export const BOSS_RAGE_HULL_FRACTION = .45
+
+// Pursuit tuning: hostiles keep a longer memory of the pilot and spot them from
+// farther out, so disengaging is a deliberate manoeuvre instead of a quick exit.
+export const PURSUIT = { memorySeconds: 40, sightMultiplier: 1.6 } as const
+
+/**
+ * A hostile keeps tracking the pilot while they are inside its (extended) sight
+ * range or it still remembers seeing them recently. Pure so the behaviour can be
+ * unit-tested without a running scene.
+ */
+export function isPlayerTracked(distance: number, secondsSinceSeen: number, sightRange: number): boolean {
+  return distance <= sightRange * PURSUIT.sightMultiplier || secondsSinceSeen <= PURSUIT.memorySeconds
+}
 
 const ENEMY_LEVEL_GROWTH = { hullLinear: .14, hullQuadratic: .003, damage: .1, attackRate: .012, minimumAttackInterval: .62, speed: .018, maximumSpeedBonus: .7, range: .05, projectile: .055 } as const
 export const BOSS_BALANCE = { hull: 1.7, shield: 1.35, damage: 1.25, attackInterval: .9, projectileSpeed: 1.12, maneuverSpeed: 1.45, activationRange: 1.15 } as const

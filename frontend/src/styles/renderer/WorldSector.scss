@@ -100,12 +100,23 @@
 .flight-radar header { display: flex; justify-content: space-between; align-items: center; gap: 5px; font-size: 11px; }
 .flight-radar header strong { font-size: 13px; color: #e4f7ff; }
 .flight-radar-map { display: block; width: 100%; height: clamp(82px, 13vh, 125px); }
+.flight-radar-map.is-3d { transform-origin: 50% 70%; }
+.radar-horizon { fill: none; stroke: #6fa9c766; stroke-width: .5; stroke-dasharray: 2 2; }
 .radar-grid { stroke: #58849d81; fill: none; stroke-width: .54; }
 .radar-forward { fill: #47bde019; }
 .radar-hostile { fill: #ff806e; }
 .radar-boss { fill: #ffc976; stroke: #fcf0c6; stroke-width: .62; }
 .radar-station { fill: #9ce8fb; }
 .radar-merchant { fill: #a2edb4; }
+.radar-planet { fill: #c9a06a; stroke: #f3e2c4; stroke-width: .5; }
+.radar-megastation { fill: #8fd0ff; stroke: #eaf6ff; stroke-width: .7; }
+.radar-signal { fill: #ffe08a; stroke: #fff6d6; stroke-width: .4; }
+.fps-readout { position: absolute; z-index: 20; left: 12px; top: 10px; font: 11px var(--font-mono, monospace); color: #8fe6b0; text-shadow: 0 1px 4px #000; pointer-events: none; }
+.speed-readout { position: absolute; z-index: 20; right: 14px; bottom: 12px; font: 600 22px var(--font-mono, monospace); color: #9fe8ff; text-shadow: 0 1px 6px #000; letter-spacing: .04em; pointer-events: none; }
+.speed-readout span { font-size: 11px; color: #6fb6d6; }
+.cockpit-speed { position: absolute; z-index: 20; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 4px 14px; font: 600 20px var(--font-mono, monospace); color: #9fe8ff; background: rgba(6, 18, 28, .72); border: 1px solid rgba(111, 211, 255, .5); border-radius: 6px; text-shadow: 0 1px 6px #000; letter-spacing: .05em; pointer-events: none; }
+.cockpit-speed span { font-size: 11px; color: #6fb6d6; }
+.translation-tracker { position: absolute; z-index: 20; left: 12px; top: 28px; font: 11px var(--font-mono, monospace); color: #ffe08a; text-shadow: 0 1px 4px #000; pointer-events: none; }
 .radar-player { fill: #eaffff; }
 .flight-radar p, .flight-radar small { margin: 0; font-size: 11px; }
 .radar-contact-warning { color: #ffba9e; font-weight: 650; }
@@ -167,4 +178,21 @@
   .flight-radar-map { height: 73px; }
   .world-sector .world-orbit-contact { right: 10px; bottom: 14px; }
   .world-sector .world-boss-vitals { top: 7px; left: 10px; right: auto; width: min(160px, 42vw); }
+}
+
+.warp-streaks {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(120, 200, 255, 0) 0deg 6deg, rgba(150, 215, 255, 0.35) 6deg 6.8deg, rgba(120, 200, 255, 0) 6.8deg 12deg);
+  -webkit-mask: radial-gradient(circle at 50% 50%, transparent 0 16%, black 62%);
+  mask: radial-gradient(circle at 50% 50%, transparent 0 16%, black 62%);
+  animation: warpPulse 0.55s linear infinite;
+}
+
+@keyframes warpPulse {
+  from { transform: scale(0.55); opacity: 0.25; }
+  to { transform: scale(1.7); opacity: 0.85; }
 }

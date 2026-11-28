@@ -95,6 +95,14 @@ describe('mission progress', () => {
       sectorDistance: 0,
       shipParts: [],
       equippedParts: { weapon: null, shield: null, engine: null },
+      collection: { collected: [], planted: [] },
+      achievements: [],
+      sideMissions: { accepted: [], completed: [], kills: {} },
+      ownedShips: ['starter'],
+      activeShip: 'starter',
+      translationParts: 0,
+      translationRepaired: false,
+      investigatedSignals: [],
     })
   })
 

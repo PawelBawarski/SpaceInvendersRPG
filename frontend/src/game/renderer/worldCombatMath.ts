@@ -8,6 +8,8 @@ export interface CombatPoint {
 
 interface CameraObstacle extends CombatPoint { radius: number }
 const CAMERA_PLANET_CLEARANCE_FRACTION = .04
+/** Closest the chase camera may be pulled to its anchor before it reads as a cockpit zoom. */
+const CAMERA_MIN_CHASE_DISTANCE = 9
 
 /** Pull the chase camera towards its anchor before it can cross a planet's surface. */
 export function keepCameraOutsidePlanets(anchor: CombatPoint, camera: CombatPoint, planets: readonly CameraObstacle[], clearance: number) {
@@ -19,6 +21,9 @@ export function keepCameraOutsidePlanets(anchor: CombatPoint, camera: CombatPoin
     if (hit !== null && hit > 0) contact = Math.min(contact, hit)
   }
   if (contact < 1) {
+    const fullDistance = Math.hypot(camera.x - anchor.x, camera.y - anchor.y, camera.z - anchor.z)
+    const minContact = fullDistance > 0.0001 ? Math.min(1, CAMERA_MIN_CHASE_DISTANCE / fullDistance) : 1
+    contact = Math.max(contact, minContact)
     camera.x = anchor.x + (camera.x - anchor.x) * contact
     camera.y = anchor.y + (camera.y - anchor.y) * contact
     camera.z = anchor.z + (camera.z - anchor.z) * contact
@@ -37,9 +42,14 @@ export function keepCameraOutsidePlanets(anchor: CombatPoint, camera: CombatPoin
     const anchorZ = anchor.z - planet.z
     const anchorDistance = Math.hypot(anchorX, anchorY, anchorZ)
     const direction = anchorDistance > 0.0001 ? 1 / anchorDistance : distance > 0.0001 ? 1 / distance : 0
-    camera.x = planet.x + (anchorDistance > 0.0001 ? anchorX : x) * direction * radius
-    camera.y = planet.y + (anchorDistance > 0.0001 ? anchorY : y) * direction * radius
-    camera.z = planet.z + (anchorDistance > 0.0001 ? anchorZ : z) * direction * radius
+    const surfaceX = planet.x + (anchorDistance > 0.0001 ? anchorX : x) * direction * radius
+    const surfaceY = planet.y + (anchorDistance > 0.0001 ? anchorY : y) * direction * radius
+    const surfaceZ = planet.z + (anchorDistance > 0.0001 ? anchorZ : z) * direction * radius
+    // Never let the shell projection yank the camera closer than the minimum chase distance.
+    if (anchorDistance > 0.0001 && Math.hypot(surfaceX - anchor.x, surfaceY - anchor.y, surfaceZ - anchor.z) < CAMERA_MIN_CHASE_DISTANCE) continue
+    camera.x = surfaceX
+    camera.y = surfaceY
+    camera.z = surfaceZ
     if (anchorDistance <= 0.0001 && distance <= 0.0001) camera.y = planet.y + radius
   }
 }

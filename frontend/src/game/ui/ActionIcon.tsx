@@ -16,6 +16,8 @@ const icons = {
   exit: 'M12 3v9m5-7a8 8 0 1 1-10 0',
   arrow: 'M4 12h15m-6-6 6 6-6 6',
   sell: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm2.5 5H11a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H9.5M12 6v12',
+  walk: 'M13 4.5a1.6 1.6 0 1 0 0-.01M11 21l1.5-5.5L10 13l1-4 3 1 2 3h3M10 9 7 11',
+  shipyard: 'M12 3c3 2 4 5 4 9l3 3-3 1v3l-4-2-4 2v-3l-3-1 3-3c0-4 1-7 4-9Zm0 4v4',
 } as const
 
 export function ActionIcon({ icon }: { icon: keyof typeof icons }) {

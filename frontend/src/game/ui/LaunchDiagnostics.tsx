@@ -36,8 +36,7 @@ export function LaunchDiagnostics({ mask, language, seed, onRepair, onLaunch }: 
   mask: number; language: GameLanguage; seed: number; onRepair: (mask: number) => void; onLaunch: () => void
 }) {
   const challenge = useMemo(() => createRecoveryChallenge(seed), [seed])
-  const referenceWave = useMemo(() => reactorWave((challenge.voltage.min + challenge.voltage.max) / 2,
-    (challenge.frequency.min + challenge.frequency.max) / 2), [challenge])
+  const referenceWave = useMemo(() => reactorWave(challenge.voltage.target, challenge.frequency.target), [challenge])
   const text = gameText(language).diagnostics
   const { labels, titles } = text
   const [task, setTask] = useState<number>(() => nextTask(mask))
@@ -82,7 +81,7 @@ export function LaunchDiagnostics({ mask, language, seed, onRepair, onLaunch }: 
     { name: text.voltage, value: voltage, change: setVoltage, band: challenge.voltage },
     { name: text.frequency, value: frequency, change: setFrequency, band: challenge.frequency },
   ]
-  const tuned = controls.every(control => control.value >= control.band.min && control.value <= control.band.max)
+  const tuned = controls.every(control => Math.abs(control.value - control.band.target) <= control.band.tolerance)
   const tasksDone = mask === RECOVERY_COMPLETE_MASK
   const locking = reactorStart !== null
   useEffect(() => {
@@ -140,11 +139,11 @@ export function LaunchDiagnostics({ mask, language, seed, onRepair, onLaunch }: 
         </svg>
       </div>
       {controls.map(control => <label key={control.name}>
-        <span>{control.name}</span><output>{control.value} / {control.band.min}–{control.band.max}</output>
+        <span>{control.name}</span><output>{control.value} / {control.band.target}</output>
         <input type="range" min="0" max="100" aria-label={control.name} value={control.value} onChange={event => {
           const value = Number(event.currentTarget.value)
           control.change(value)
-          if (value < control.band.min || value > control.band.max) { setReactorStart(null); setReactorProgress(0) }
+          if (Math.abs(value - control.band.target) > control.band.tolerance) { setReactorStart(null); setReactorProgress(0) }
         }} />
       </label>)}
       {locking && <progress className="reactor-lock" value={reactorProgress} max={1} aria-label={text.reactorLocking} />}

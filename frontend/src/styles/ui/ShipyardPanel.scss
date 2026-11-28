@@ -1,0 +1,23 @@
+.shipyard-panel {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(380px, 92vw); z-index: 40;
+  display: flex; flex-direction: column; gap: 10px; padding: 18px 18px 24px;
+  background: linear-gradient(160deg, #0a1420f7, #060b12fb); border-left: 1px solid #2a4258;
+  box-shadow: -18px 0 50px #000a; overflow-y: auto; color: #cfe2f2;
+}
+.shipyard-header { display: flex; align-items: center; justify-content: space-between; }
+.shipyard-header h2 { margin: 0; font-size: 18px; color: #bfe6ff; letter-spacing: .03em; }
+.shipyard-sub { margin: 0; font: 12px var(--font-mono, monospace); color: #8fb6cc; }
+.shipyard-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.shipyard-tier {
+  padding: 12px 14px; border: 1px solid #223a4e; border-radius: 10px; background: #0b1622;
+}
+.shipyard-tier.is-active { border-color: #8fd0ff; box-shadow: 0 0 0 1px #8fd0ff55 inset; }
+.shipyard-tier.is-owned:not(.is-active) { border-color: #2f5a48; }
+.shipyard-tier-head { display: flex; align-items: baseline; justify-content: space-between; }
+.shipyard-tier-head strong { font-size: 14px; color: #e4f1fb; }
+.shipyard-tier-head span { font: 11px var(--font-mono, monospace); color: #7fa6c0; }
+.shipyard-tier p { margin: 6px 0 10px; font-size: 12px; line-height: 1.5; color: #9fb4c9; }
+.shipyard-tier-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.shipyard-tier-foot small { font: 11px var(--font-mono, monospace); color: #8fb6cc; }
+.shipyard-tier-foot em { font-size: 12px; color: #8fe6b0; }
+.shipyard-tier .primary-action:disabled { opacity: .45; cursor: not-allowed; }

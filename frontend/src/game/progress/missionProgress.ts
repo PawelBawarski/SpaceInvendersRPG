@@ -16,6 +16,11 @@ import { DAMAGE_TYPES, DEFAULT_SHIP_RESISTANCES, getDamageResistance, MAX_DAMAGE
 import { FIRST_FLIGHT_VITALS, type ShipVitals } from '../domain/shipTelemetry'
 import { RECOVERY_COMPLETE_MASK } from '../simulation/ShipRecovery'
 import { canLearnPilotSkill, PILOT_SKILLS, readPilotSkills, type PilotSkillId } from './pilotSkills'
+import { EMPTY_COLLECTION, MAX_PLANT_SLOTS, collectItem, getCollectible, plantItem, uprootPlant, type CollectionState } from '../domain/collectibles'
+import { evaluateAchievements, getAchievement } from '../domain/achievements'
+import { getSideMission, isSideMissionId, SIDE_MISSIONS, type SideMissionId } from '../domain/sideMissions'
+import { canPurchaseShip, SHIP_TIERS, STARTER_SHIP_ID } from '../domain/shipTiers'
+import { TRANSLATION_PARTS_REQUIRED } from '../domain/translationQuest'
 
 export const ORION_LAYOUT_VERSION = 2
 
@@ -57,7 +62,23 @@ export interface MissionProgress {
   sectorDistance: number
   shipParts: ShipPart[]
   equippedParts: EquippedShipParts
+  collection?: CollectionState
+  achievements?: string[]
+  sideMissions?: SideMissionState
+  ownedShips: string[]
+  activeShip: string
+  translationParts: number
+  translationRepaired: boolean
+  investigatedSignals: string[]
 }
+
+export interface SideMissionState {
+  accepted: SideMissionId[]
+  completed: SideMissionId[]
+  kills: Partial<Record<SideMissionId, number>>
+}
+
+export const EMPTY_SIDE_MISSIONS: SideMissionState = { accepted: [], completed: [], kills: {} }
 
 export interface SectorLoot {
   credits: number
@@ -122,6 +143,14 @@ export function createEmptyMissionProgress(): MissionProgress {
     sectorDistance: 0,
     shipParts: [],
     equippedParts: { weapon: null, shield: null, engine: null },
+    collection: { collected: [], planted: [] },
+    achievements: [],
+    sideMissions: { accepted: [], completed: [], kills: {} },
+    ownedShips: [STARTER_SHIP_ID],
+    activeShip: STARTER_SHIP_ID,
+    translationParts: 0,
+    translationRepaired: false,
+    investigatedSignals: [],
   }
 }
 
@@ -202,6 +231,18 @@ export function loadMissionProgress(): MissionProgress {
       sectorY: finiteNumber(parsed.sectorY),
       sectorDistance: nonNegativeNumber(parsed.sectorDistance),
       shipParts,
+      collection: normalizeCollection(parsed.collection),
+      achievements: Array.isArray(parsed.achievements)
+        ? [...new Set(parsed.achievements.filter((id): id is string => typeof id === 'string' && getAchievement(id) !== undefined))]
+        : [],
+      sideMissions: normalizeSideMissions(parsed.sideMissions),
+      ownedShips: normalizeOwnedShips(parsed.ownedShips),
+      activeShip: normalizeActiveShip(parsed.activeShip, parsed.ownedShips),
+      translationParts: Math.min(TRANSLATION_PARTS_REQUIRED, Math.floor(nonNegativeNumber(parsed.translationParts))),
+      translationRepaired: parsed.translationRepaired === true,
+      investigatedSignals: Array.isArray(parsed.investigatedSignals)
+        ? [...new Set(parsed.investigatedSignals.filter((id): id is string => typeof id === 'string'))]
+        : [],
       equippedParts: {
         weapon: findEquippedPart('weapon'),
         shield: findEquippedPart('shield'),
@@ -579,8 +620,150 @@ function nonNegativeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
+function normalizeCollection(value: unknown): CollectionState {
+  const raw = value && typeof value === 'object' ? value as Partial<CollectionState> : {}
+  const collected = Array.isArray(raw.collected)
+    ? raw.collected.filter((id): id is string => typeof id === 'string' && getCollectible(id) !== undefined)
+    : []
+  const planted = Array.isArray(raw.planted)
+    ? raw.planted.filter((plant): plant is { collectibleId: string; slot: number } =>
+      !!plant && typeof plant === 'object'
+      && typeof plant.collectibleId === 'string' && getCollectible(plant.collectibleId)?.kind === 'plant'
+      && Number.isInteger(plant.slot) && plant.slot >= 0 && plant.slot < MAX_PLANT_SLOTS)
+    : []
+  const uniquePlanted = planted.filter((plant, index) =>
+    planted.findIndex(other => other.slot === plant.slot) === index
+    && planted.findIndex(other => other.collectibleId === plant.collectibleId) === index)
+  return { collected: [...new Set(collected)], planted: uniquePlanted }
+}
+
+export function collectCollectible(progress: MissionProgress, id: string): MissionProgress {
+  const collection = collectItem(progress.collection ?? EMPTY_COLLECTION, id)
+  if (collection === (progress.collection ?? EMPTY_COLLECTION)) return progress
+  return { ...progress, collection }
+}
+
+export function plantCollectible(progress: MissionProgress, id: string, slot: number): MissionProgress {
+  const collection = plantItem(progress.collection ?? EMPTY_COLLECTION, id, slot)
+  if (collection === (progress.collection ?? EMPTY_COLLECTION)) return progress
+  return { ...progress, collection }
+}
+
+export function uprootCollectible(progress: MissionProgress, slot: number): MissionProgress {
+  const collection = uprootPlant(progress.collection ?? EMPTY_COLLECTION, slot)
+  if (collection === (progress.collection ?? EMPTY_COLLECTION)) return progress
+  return { ...progress, collection }
+}
+
+/** Re-evaluates achievement unlocks; returns the same reference when nothing changed. */
+export function refreshAchievements(progress: MissionProgress): MissionProgress {
+  const { unlocked } = evaluateAchievements(progress, progress.achievements ?? [])
+  if (unlocked.length === (progress.achievements?.length ?? 0)) return progress
+  return { ...progress, achievements: unlocked }
+}
+
 function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function normalizeSideMissions(value: unknown): SideMissionState {
+  const raw = value && typeof value === 'object' ? value as Partial<SideMissionState> : {}
+  const accepted = Array.isArray(raw.accepted) ? raw.accepted.filter(isSideMissionId) : []
+  const completed = Array.isArray(raw.completed) ? raw.completed.filter(isSideMissionId) : []
+  const kills: Partial<Record<SideMissionId, number>> = {}
+  if (raw.kills && typeof raw.kills === 'object') {
+    for (const mission of SIDE_MISSIONS) {
+      const count = Math.floor(nonNegativeNumber(raw.kills[mission.id]))
+      if (count > 0) kills[mission.id] = count
+    }
+  }
+  return {
+    accepted: [...new Set(accepted)].filter(id => !completed.includes(id)),
+    completed: [...new Set(completed)],
+    kills,
+  }
+}
+
+function normalizeOwnedShips(value: unknown): string[] {
+  const valid = Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && SHIP_TIERS.some(tier => tier.id === id)) : []
+  return [...new Set([STARTER_SHIP_ID, ...valid])]
+}
+
+function normalizeActiveShip(active: unknown, owned: unknown): string {
+  const ownedShips = normalizeOwnedShips(owned)
+  return typeof active === 'string' && ownedShips.includes(active) ? active : STARTER_SHIP_ID
+}
+
+/** Buy the next tier ship when level, prerequisite tier and credits allow it. */
+export function purchaseShip(progress: MissionProgress, id: string): MissionProgress {
+  const tier = SHIP_TIERS.find(ship => ship.id === id)
+  if (!tier || !canPurchaseShip(tier, progress.credits, getPilotLevel(progress.experience), progress.ownedShips)) return progress
+  return {
+    ...progress,
+    credits: progress.credits - tier.price,
+    ownedShips: [...progress.ownedShips, tier.id],
+    activeShip: tier.id,
+    lastMission: 'victory',
+  }
+}
+
+/**
+ * Investigate a signal: each new signal yields one translation part. Collecting the
+ * required parts repairs the module and grants a one-time reward.
+ */
+export function investigateSignal(progress: MissionProgress, id: string): MissionProgress {
+  if (progress.translationRepaired || progress.investigatedSignals.includes(id) || !id) return progress
+  const parts = Math.min(TRANSLATION_PARTS_REQUIRED, progress.translationParts + 1)
+  const repaired = parts >= TRANSLATION_PARTS_REQUIRED
+  const next: MissionProgress = {
+    ...progress,
+    translationParts: parts,
+    translationRepaired: repaired,
+    investigatedSignals: [...progress.investigatedSignals, id],
+  }
+  return repaired ? { ...next, credits: next.credits + 500, experience: next.experience + scaleExperience(300), lastMission: 'victory' } : next
+}
+
+/** Switch the active hull to any owned ship. */
+export function selectShip(progress: MissionProgress, id: string): MissionProgress {
+  if (!progress.ownedShips.includes(id) || progress.activeShip === id) return progress
+  return { ...progress, activeShip: id }
+}
+
+/** Accept a Bastion contract; idempotent and ignores unknown or completed ids. */
+export function acceptSideMission(progress: MissionProgress, id: SideMissionId): MissionProgress {
+  const state = progress.sideMissions ?? EMPTY_SIDE_MISSIONS
+  if (!isSideMissionId(id) || state.accepted.includes(id) || state.completed.includes(id)) return progress
+  return { ...progress, sideMissions: { ...state, accepted: [...state.accepted, id], kills: { ...state.kills } } }
+}
+
+/**
+ * Count a hostile kill toward every active contract. Completing a contract grants
+ * its reward once and moves it to the completed list.
+ */
+export function registerSideMissionKill(progress: MissionProgress): MissionProgress {
+  const state = progress.sideMissions ?? EMPTY_SIDE_MISSIONS
+  if (state.accepted.length === 0) return progress
+  let next = progress
+  const kills = { ...state.kills }
+  const completed = [...state.completed]
+  const accepted = [...state.accepted]
+  for (const id of state.accepted) {
+    const mission = getSideMission(id)
+    const count = (kills[id] ?? 0) + 1
+    kills[id] = count
+    if (count >= mission.requiredKills) {
+      completed.push(id)
+      accepted.splice(accepted.indexOf(id), 1)
+      next = {
+        ...next,
+        credits: next.credits + mission.reward.credits,
+        experience: next.experience + scaleExperience(mission.reward.experience),
+        lastMission: 'victory',
+      }
+    }
+  }
+  return { ...next, sideMissions: { accepted, completed, kills } }
 }
 
 /** All experience awards share this balance multiplier; existing levels are preserved. */

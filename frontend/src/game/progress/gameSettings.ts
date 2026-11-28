@@ -11,6 +11,9 @@ export type { GameLanguage } from '../i18n'
 export type GraphicsQuality = 'low' | 'standard' | 'high'
 export const RENDER_SCALES = [0.5, 0.67, 0.85, 1, 1.2] as const
 export type RenderScale = (typeof RENDER_SCALES)[number]
+export type StarfieldDensity = 'low' | 'medium' | 'high'
+export const STARFIELD_DENSITY_STARS: Record<StarfieldDensity, number> = { low: 90, medium: 150, high: 220 }
+export const STARFIELD_DENSITIES: readonly StarfieldDensity[] = ['low', 'medium', 'high']
 
 export interface GraphicsSettings {
   graphicsQuality: GraphicsQuality
@@ -20,6 +23,9 @@ export interface GraphicsSettings {
   speedEffects: boolean
   planetAtmospheres: boolean
   hangarShadows: boolean
+  starfieldDensity: StarfieldDensity
+  damageVignette: boolean
+  showFps: boolean
 }
 
 export interface GameSettings extends GraphicsSettings {
@@ -43,6 +49,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   speedEffects: true,
   planetAtmospheres: true,
   hangarShadows: true,
+  starfieldDensity: 'medium',
+  damageVignette: true,
+  showFps: false,
   controls: DEFAULT_CONTROL_BINDINGS,
   mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
   mainVolume: 0.8,
@@ -73,7 +82,7 @@ function loadControlBindings(value: unknown): ControlBindings {
     used.delete('Space')
     const reserved = new Set(used)
     if (savedFullBoost) reserved.add(savedFullBoost)
-    controls.fire = findAvailableBinding(reserved, ['KeyF', 'KeyJ', 'KeyH'])
+    controls.fire = findAvailableBinding(reserved, ['KeyJ', 'KeyH', 'KeyF'])
     used.add(controls.fire)
   }
   controls.fullBoost = savedFullBoost && !used.has(savedFullBoost)
@@ -116,6 +125,10 @@ function loadMouseSensitivity(value: unknown): number {
     : DEFAULT_MOUSE_SENSITIVITY
 }
 
+export function normalizeStarfieldDensity(value: unknown): StarfieldDensity {
+  return value === 'low' || value === 'medium' || value === 'high' ? value : 'medium'
+}
+
 export function loadGameSettings(): GameSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -132,6 +145,9 @@ export function loadGameSettings(): GameSettings {
       speedEffects: parsed.speedEffects !== false,
       planetAtmospheres: parsed.planetAtmospheres !== false,
       hangarShadows: parsed.hangarShadows !== false,
+      starfieldDensity: normalizeStarfieldDensity(parsed.starfieldDensity),
+      damageVignette: parsed.damageVignette !== false,
+      showFps: parsed.showFps === true,
       controls: loadControlBindings(parsed.controls),
       mouseSensitivity: loadMouseSensitivity(parsed.mouseSensitivity),
       mainVolume: loadVolume(parsed.mainVolume, DEFAULT_GAME_SETTINGS.mainVolume),

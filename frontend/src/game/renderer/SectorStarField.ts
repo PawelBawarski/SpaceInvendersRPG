@@ -47,9 +47,13 @@ export function createSectorStarField(scene: Scene, count: number, center: Vecto
       }
     },
     update(position: Vector3) {
+      const visibleCount = Math.ceil(255 / STAR_COLORS.length)
       for (const { mesh, matrices } of batches) {
         let changed = false
-        for (let offset = 0; offset < mesh.thinInstanceCount * 16; offset += 16) {
+        // Only update the front face of stars to avoid overdraw
+        const startIndex = mesh.thinInstanceCount - visibleCount
+        const endIndex = mesh.thinInstanceCount
+        for (let offset = startIndex * 16; offset < endIndex * 16; offset += 16) {
           const x = matrices[offset + 12]
           const y = matrices[offset + 13]
           const z = matrices[offset + 14]

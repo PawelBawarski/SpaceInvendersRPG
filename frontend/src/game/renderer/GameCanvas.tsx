@@ -6,7 +6,6 @@ import {
   Color4,
   Engine,
   GlowLayer,
-  Mesh,
   MeshBuilder,
   StandardMaterial,
   Vector3,
@@ -49,6 +48,24 @@ import { createSpaceEnvironment } from './spaceEnvironment'
 import { getMission, type MissionId } from '../missions/definitions'
 import { ShipStatusHud } from '../ui/ShipStatusHud'
 import { createFlightEffects } from './FlightEffects'
+import { createStarField } from './combatStarField'
+import { createRelayFragments } from './relayFragments'
+import { getFragmentTransmission } from './fragmentTransmission'
+
+/** Boss health per mission type; salvage/relay missions have no boss. */
+const BOSS_HEALTH = { signal: 360, nullChoir: 360, default: 300 } as const
+/** Shield of the signal-relay boss (others start unshielded). */
+const BOSS_SHIELD_SIGNAL = 100
+/** ArcRotateCamera framing for the combat scene. */
+const COMBAT_CAMERA = { alpha: -Math.PI / 2, beta: 1.32, radius: 18 } as const
+/** Upper bound on a single frame delta (seconds) to avoid tunnelling after a stall. */
+const FRAME_DELTA_CAP = 0.033
+/** Flat armor applied to each contact/ram hit. */
+const CONTACT_ARMOR = 5
+/** Number of bolts in a boss volley per mission type. */
+const BOSS_VOLLEY_SPREAD = { relay: 1, nullChoir: 3, default: 2 } as const
+/** Delay (ms) before auto-continuing after a mission is won. */
+const MISSION_TRANSITION_MS = 2200
 
 interface GameCanvasProps {
   language: GameLanguage
@@ -83,10 +100,6 @@ const GRAPHICS_PROFILE: Record<GraphicsQuality, { hardwareScale: number; glow: n
   high: { hardwareScale: 0.85, glow: 0.8, stars: 260 },
 }
 
-function getFragmentTransmission(index: number, language: GameLanguage): string | undefined {
-  return gameText(language).combatScene.labels[index]
-}
-
 export function GameCanvas({
   language,
   mission,
@@ -110,8 +123,8 @@ export function GameCanvas({
   const salvageMission = missionDefinition.objective === 'recover-fragments'
   const signalMission = missionDefinition.objective === 'disable-signal'
   const relayMission = salvageMission || signalMission
-  const maxBossHealth = salvageMission ? 0 : signalMission ? 360 : mission === 'null-choir' ? 360 : 300
-  const maxBossShield = signalMission ? 100 : maxBossHealth
+  const maxBossHealth = salvageMission ? 0 : signalMission ? BOSS_HEALTH.signal : mission === 'null-choir' ? BOSS_HEALTH.nullChoir : BOSS_HEALTH.default
+  const maxBossShield = signalMission ? BOSS_SHIELD_SIGNAL : maxBossHealth
   const openingTransmission = salvageMission
     ? gameText(language).combatScene.wreckLogThreeBuoysPreservedFragments
     : signalMission
@@ -218,7 +231,7 @@ export function GameCanvas({
     playerShotMaterial.emissiveColor = new Color3(1, 0.68, 0.28)
     const hostileShotMaterial = new StandardMaterial('hostileShotMaterial', scene)
     hostileShotMaterial.emissiveColor = new Color3(0.95, 0.22, 0.12)
-    const camera = new ArcRotateCamera('camera', -Math.PI / 2, 1.32, 18, Vector3.Zero(), scene)
+    const camera = new ArcRotateCamera('camera', COMBAT_CAMERA.alpha, COMBAT_CAMERA.beta, COMBAT_CAMERA.radius, Vector3.Zero(), scene)
     camera.fov = 0.9
     camera.lowerRadiusLimit = 10
     camera.upperRadiusLimit = 22
@@ -364,7 +377,7 @@ export function GameCanvas({
     }
 
     const fireBossVolley = () => {
-      const spread = relayMission ? 1 : mission === 'null-choir' ? 3 : 2
+      const spread = relayMission ? BOSS_VOLLEY_SPREAD.relay : mission === 'null-choir' ? BOSS_VOLLEY_SPREAD.nullChoir : BOSS_VOLLEY_SPREAD.default
       for (let i = -spread; i <= spread; i += 1) {
         const bolt = MeshBuilder.CreateCylinder(`bossBolt${i}${elapsed}`, { height: 1, diameter: 0.12 }, scene)
         bolt.material = hostileShotMaterial
@@ -387,7 +400,7 @@ export function GameCanvas({
       updateDamageNumbers(damageNumbers)
       flightEffects.setPaused(pausedRef.current || completed || failed)
       if (pausedRef.current) return
-      const dt = Math.min(engine.getDeltaTime() / 1000, 0.033)
+      const dt = Math.min(engine.getDeltaTime() / 1000, FRAME_DELTA_CAP)
       elapsed += dt
       hudClock += dt
       fireClock = Math.max(0, fireClock - dt)
@@ -489,7 +502,7 @@ export function GameCanvas({
           }
         } else if (signalMission && Vector3.Distance(projectile.mesh.position, boss.position) < 2.1) {
           if (signalPulseOpen && projectile.signalAligned) {
-            const damage = applyArmorDamage(projectile.damage, 5)
+            const damage = applyArmorDamage(projectile.damage, CONTACT_ARMOR)
             createImpactEffect(scene, boss.position, new Color3(1, 0.62, 0.25), 1.15)
             setImpactFlash((current) => current + 1)
             damageNumbers.push(createDamageNumber(scene, projectile.mesh.position, damage, projectile.critical))
@@ -517,7 +530,7 @@ export function GameCanvas({
           }
           disposeProjectile(projectile)
         } else if (!relayMission && Vector3.Distance(projectile.mesh.position, boss.position) < 2.1) {
-            const damage = applyArmorDamage(projectile.damage, 5)
+            const damage = applyArmorDamage(projectile.damage, CONTACT_ARMOR)
             createImpactEffect(scene, boss.position, new Color3(1, 0.62, 0.25), 1.15)
             setImpactFlash((current) => current + 1)
             damageNumbers.push(createDamageNumber(scene, projectile.mesh.position, damage, projectile.critical))
@@ -691,7 +704,7 @@ export function GameCanvas({
 
   useEffect(() => {
     if (!missionWon || paused) return
-    const transition = window.setTimeout(onMissionContinue, 2200)
+    const transition = window.setTimeout(onMissionContinue, MISSION_TRANSITION_MS)
     return () => window.clearTimeout(transition)
   }, [missionWon, onMissionContinue, paused])
 
@@ -760,68 +773,4 @@ export function GameCanvas({
       </aside>
     </main>
   )
-}
-
-function createRelayFragments(scene: Scene): TransformNode[] {
-  const positions = [
-    new Vector3(0, -2.2, 5),
-    new Vector3(1.2, -1.6, 13),
-    new Vector3(-1, -1.2, 22),
-  ]
-  return positions.map((position, index) => {
-    const fragment = new TransformNode(`relayBlackBox${index}`, scene)
-    fragment.position.copyFrom(position)
-    const shard = MeshBuilder.CreateCylinder(`blackBoxShard${index}`, {
-      height: 0.8,
-      diameterTop: 0.2,
-      diameterBottom: 0.8,
-      tessellation: 6,
-    }, scene)
-    shard.parent = fragment
-    shard.rotation.x = Math.PI / 2
-    const material = new StandardMaterial(`blackBoxMaterial${index}`, scene)
-    material.diffuseColor = new Color3(0.12, 0.35, 0.43)
-    material.emissiveColor = new Color3(0.12, 0.8, 1)
-    shard.material = material
-
-    const marker = MeshBuilder.CreateTorus(`blackBoxMarker${index}`, {
-      diameter: 1.3,
-      thickness: 0.055,
-      tessellation: 20,
-    }, scene)
-    marker.parent = fragment
-    marker.rotation.x = Math.PI / 2
-    marker.material = material
-    return fragment
-  })
-}
-
-function createStarField(scene: Scene, starCount: number): TransformNode {
-  const field = new TransformNode('starField', scene)
-  const materials = [new Color3(0.62, 0.78, 1), new Color3(1, 0.7, 0.42), new Color3(0.9, 0.95, 1)].map((color, index) => {
-    const material = new StandardMaterial(`starMaterial${index}`, scene)
-    material.disableLighting = true
-    material.emissiveColor = color
-    return material
-  })
-  for (let i = 0; i < starCount; i += 1) {
-    const star = MeshBuilder.CreateSphere(`star${i}`, { diameter: 0.025 + (i % 4) * 0.012, segments: 3 }, scene)
-    star.parent = field
-    star.position.set(
-      ((i * 37) % 40) - 20,
-      ((i * 71) % 30) - 15,
-      ((i * 53) % 80) - 10,
-    )
-    star.material = materials[i % materials.length]
-    star.isPickable = false
-  }
-  for (const material of materials) {
-    const stars = field.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.material === material)
-    const combined = Mesh.MergeMeshes(stars, true, true)
-    if (combined) {
-      combined.parent = field
-      combined.isPickable = false
-    }
-  }
-  return field
 }

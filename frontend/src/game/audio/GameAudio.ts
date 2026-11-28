@@ -8,6 +8,26 @@ export interface GameAudioLevels {
 }
 
 const SHOT_SOUND = { seconds: .24, bass: 72, metal: 204, bodyCutoff: 760, snapCutoff: 3200 } as const
+const FOOTSTEP_SECONDS = 0.14
+
+export function buildFootstepBuffer(context: AudioContext): AudioBuffer {
+  const { sampleRate } = context
+  const buffer = context.createBuffer(1, Math.ceil(sampleRate * FOOTSTEP_SECONDS), sampleRate)
+  const samples = buffer.getChannelData(0)
+  let seed = 20261
+  let low = 0
+  const response = 1 - Math.exp(-2 * Math.PI * 520 / sampleRate)
+  for (let index = 0; index < samples.length; index++) {
+    const seconds = index / sampleRate
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    const noise = seed / 0x80000000 - 1
+    low += (noise - low) * response
+    const attack = Math.min(1, seconds / 0.004)
+    const tail = Math.max(0, 1 - seconds / FOOTSTEP_SECONDS)
+    samples[index] = low * 0.5 * attack * tail * tail
+  }
+  return buffer
+}
 
 function buildShotBuffer(context: AudioContext): AudioBuffer {
   const { sampleRate } = context
@@ -41,6 +61,7 @@ export class GameAudio {
   private readonly shotGain: GainNode | null
   private readonly musicGain: GainNode | null
   private shotBuffer: AudioBuffer | null = null
+  private footstepBuffer: AudioBuffer | null = null
   private musicTimer: number | undefined
   private noteIndex = 0
   private musicStarted = false
@@ -192,6 +213,23 @@ export class GameAudio {
     this.masterGain.gain.setTargetAtTime(levels.main, now, 0.04)
     this.shotGain.gain.setTargetAtTime(levels.shots, now, 0.04)
     this.musicGain.gain.setTargetAtTime(levels.music * 0.3, now, 0.04)
+  }
+
+  playFootstep(run = false): void {
+    if (!this.context || !this.masterGain || this.context.state !== 'running' || this.disposed) return
+    this.footstepBuffer ??= buildFootstepBuffer(this.context)
+    const step = this.context.createBufferSource()
+    step.buffer = this.footstepBuffer
+    const filter = this.context.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.value = run ? 900 : 600
+    const gain = this.context.createGain()
+    gain.gain.value = run ? 0.05 : 0.035
+    step.connect(filter)
+    filter.connect(gain)
+    gain.connect(this.masterGain)
+    step.onended = () => { step.disconnect(); filter.disconnect(); gain.disconnect() }
+    step.start()
   }
 
   playShot(): void {

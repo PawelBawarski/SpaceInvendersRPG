@@ -32,6 +32,8 @@ interface PilotInventoryProps {
   progress: MissionProgress
   language: GameLanguage
   canSell: boolean
+  /** Refitting (equip/unequip) is only allowed while docked at a station or hangar. */
+  canRefit?: boolean
   quality: GraphicsQuality
   hullFraction: number
   onClose: () => void
@@ -45,6 +47,7 @@ function PilotInventory({
   progress,
   language,
   canSell,
+  canRefit = true,
   quality,
   hullFraction,
   onClose,
@@ -71,7 +74,7 @@ function PilotInventory({
 
   const renderPart = (part: ShipPart) => {
     const requiredLevel = getShipPartLevelRequirement(part.rarity)
-    const canEquip = getPilotLevel(progress.experience) >= requiredLevel
+    const canEquip = canRefit && getPilotLevel(progress.experience) >= requiredLevel
     const tooltip = [
       `${getShipPartSlotLabel(language, part.slot)} · ${getShipPartRarityLabel(language, part.rarity)}`,
       getShipPartStatSummary(part, language),
@@ -135,7 +138,7 @@ function PilotInventory({
         <strong>{getShipPartSlotLabel(language, slot)}</strong>
         {part ? <small>{getShipPartRarityLabel(language, part.rarity)}</small> : <small>{gameText(language).inventory.freeSlot}</small>}
       </div>
-      {part && <button type="button" disabled={backpackParts.length >= SHIP_PART_STORAGE_CAPACITY} onClick={() => onUnequip(slot)}>{text.remove}</button>}
+      {part && <button type="button" disabled={!canRefit || backpackParts.length >= SHIP_PART_STORAGE_CAPACITY} onClick={() => onUnequip(slot)}>{text.remove}</button>}
     </article>
   }
 
@@ -159,6 +162,7 @@ function PilotInventory({
 
         <section className="pilot-equipped" aria-labelledby="pilot-equipped-title">
           <h3 id="pilot-equipped-title">{text.equipped}</h3>
+          {!canRefit && <p className="pilot-refit-locked" role="status">{language === 'pl' ? 'Zmiana i modernizacja statku tylko w stacji lub hangarze.' : 'Refit and upgrades are only available at a station or hangar.'}</p>}
           <div className="pilot-equipped-slots pilot-ship-deck">
             <div className="pilot-slot-column">{SHIP_PART_SLOTS.slice(0, 3).map(renderSlot)}</div>
             <div className="pilot-ship-view">

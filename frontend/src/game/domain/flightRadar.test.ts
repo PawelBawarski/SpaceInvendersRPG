@@ -15,6 +15,8 @@ it('shows contacts ahead of the nose when climbing, diving, or turning', () => {
   expect(diving.filter(contact => contact.ahead).map(contact => contact.id)).toEqual(['below'])
   expect(climbing.find(contact => contact.id === 'above')!.y).toBeLessThan(50)
   expect(climbing.find(contact => contact.id === 'below')!.y).toBeGreaterThan(50)
+  expect(climbing.find(contact => contact.id === 'above')!.elev).toBeGreaterThan(0)
+  expect(climbing.find(contact => contact.id === 'below')!.elev).toBeLessThan(0)
   expect(climbing.some(contact => contact.id === 'distant')).toBe(false)
   expect(projectRadarContacts(ship, Math.PI / 2, 0, 1600, contacts).find(contact => contact.id === 'east')).toMatchObject({ ahead: true, x: 50 })
 })

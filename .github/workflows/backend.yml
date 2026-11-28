@@ -1,0 +1,48 @@
+name: Backend Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-backend-${{ hashFiles('backend/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-backend-
+      
+      - name: Install dependencies
+        working-directory: backend
+        run: mvn clean install
+      
+      - name: Run Unit Tests
+        working-directory: backend
+        env:
+          SPRING_PROFILES_ACTIVE: test
+        run: mvn test
+      
+      - name: Verify Build
+        working-directory: backend
+        env:
+          SPRING_PROFILES_ACTIVE: test
+        run: mvn verify

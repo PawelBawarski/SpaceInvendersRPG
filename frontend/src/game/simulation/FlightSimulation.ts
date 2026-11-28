@@ -3,12 +3,14 @@ import type { ShipPartBonuses } from '../progress/shipParts'
 import { DODGE_TIMING } from '../domain/combat'
 import { BASE_SHIP_VITALS } from '../domain/shipTelemetry'
 
-const FLIGHT_SPEED_BASELINE = { cruise: 292.5, reverse: 241.8, reduction: .2 } as const
+const FLIGHT_SPEED_BASELINE = { cruise: 292.5 * 1.5, reverse: 241.8, reduction: .2 } as const
 export const FLIGHT_SPEEDS = {
   cruise: FLIGHT_SPEED_BASELINE.cruise * (1 - FLIGHT_SPEED_BASELINE.reduction),
   reverse: FLIGHT_SPEED_BASELINE.reverse * (1 - FLIGHT_SPEED_BASELINE.reduction),
 } as const
 export const FLIGHT_STEERING = { pitchRate: 1.1, yawRate: 1.25, rollRate: 2.4, dodgeStep: 7 } as const
+/** No throttle input means the ship holds still (engines idle) instead of drifting forward. */
+export const FLIGHT_CRUISE_THRUST = 0
 const SPEED_RESPONSE = 2.6
 const MAX_DODGE_COOLDOWN_REDUCTION = 0.55
 
@@ -56,7 +58,7 @@ export function readFlightUpdate(
     pitch: clamp((isDown('pitchDown') ? 1 : 0) - (isDown('pitchUp') ? 1 : 0) + mouse.pitch, -1, 1),
     yaw: clamp((isDown('yawRight') ? 1 : 0) - (isDown('yawLeft') ? 1 : 0) + mouse.yaw, -1, 1),
     roll: (isDown('rollLeft') ? 1 : 0) - (isDown('rollRight') ? 1 : 0),
-    thrust: isDown('fullBoost') ? 1 : isDown('boost') ? 0.5 : isDown('brake') ? -1 : 0,
+    thrust: isDown('brake') ? -1 : isDown('fullBoost') ? 1.2 : isDown('boost') ? 0.96 : FLIGHT_CRUISE_THRUST,
     dodgeRequested: isDown('dodge'),
     fireRequested: isDown('fire') || mouse.fire,
   }
@@ -81,7 +83,7 @@ export function approachFlightSpeed(speed: number, targetSpeed: number, dt: numb
 
 export function getFlightTargetSpeed(thrust: number, bonuses: Pick<ShipPartBonuses, 'enginePercent' | 'speedPercent'>): number {
   const multiplier = (1 + bonuses.enginePercent / 100) * (1 + (bonuses.speedPercent ?? 0) / 100)
-  const power = clamp(thrust, -1, 1)
+  const power = clamp(thrust, -1, 1.2)
   return (power < 0 ? FLIGHT_SPEEDS.reverse : FLIGHT_SPEEDS.cruise) * power * multiplier
 }
 

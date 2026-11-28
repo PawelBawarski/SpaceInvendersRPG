@@ -23,7 +23,7 @@ import { getEnemyIdentity } from '../domain/enemyIdentity'
 import { sampleFormationPosition, samplePatrolRoute, type PatrolFormation } from '../domain/patrolFormation'
 import { SpatialIndex } from '../simulation/SpatialIndex'
 import { steerAroundPlanets } from '../simulation/SpaceNavigation'
-import { BOSS_BALANCE, BOSS_RAGE_HULL_FRACTION, ENEMY_SHIELD_DELAY, getBossManeuver, getEnemyArmor, getEnemyManeuver, getEnemyShieldCapacity, getShipContactDamage, PLAYER_CONTACT_RADIUS, scaleEnemyCombatStats, SHIP_CONTACT_COOLDOWN } from '../domain/enemyManeuvers'
+import { BOSS_BALANCE, BOSS_RAGE_HULL_FRACTION, ENEMY_SHIELD_DELAY, getBossManeuver, getEnemyArmor, getEnemyManeuver, getEnemyShieldCapacity, getShipContactDamage, isPlayerTracked, PLAYER_CONTACT_RADIUS, PURSUIT, scaleEnemyCombatStats, SHIP_CONTACT_COOLDOWN } from '../domain/enemyManeuvers'
 import type { RadarTarget } from '../domain/flightRadar'
 
 export interface EnemyNameplateTarget {
@@ -75,6 +75,15 @@ interface Actor extends EnemyNameplateTarget {
   formationTarget: Vector3 | null
 }
 
+interface AsteroidActor {
+  id: string
+  position: Vector3
+  radius: number
+  health: number
+  mesh: Mesh | null
+  defeated: boolean
+}
+
 interface Bolt {
   mesh: Mesh
   velocity: Vector3
@@ -105,6 +114,7 @@ interface CombatCallbacks {
   getProgress: () => MissionProgress
   onPlayerHit: (amount: number, source?: DamageSource) => void
   onEnemyDefeated: (id: string, respawnAt?: number) => void
+  onAsteroidDestroyed?: (id: string) => void
   onEnemyRespawn?: (id: string) => void
   onMissionComplete: (id: MissionId) => void
   onMissionProgress: (id: MissionId, count: number) => void
@@ -142,8 +152,6 @@ const RETREAT_SPEED_FACTOR = 1.35
 const RETREAT_LEASH_FACTOR = 2
 const BOSS_LEASH_RADIUS = 210
 const ENEMY_STEERING_RESPONSE = 5.5
-const PURSUIT_MEMORY_SECONDS = 24
-const PURSUIT_SIGHT_MULTIPLIER = 1.35
 const AI_MOVEMENT = {
   formationSpeedMultiplier: 1.8,
   patrolRadiusMinimum: 48,
@@ -169,6 +177,7 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
   const counts = new Map<MissionId, number>(missions.map(mission => [mission.id, initial.missionObjectiveProgress?.[mission.id] ?? 0]))
   const defeated = new Set(initial.defeatedDrones)
   const actors: Actor[] = []
+  const asteroidActors: AsteroidActor[] = []
   const actorIds = new Set<string>()
   const orbitalFleets = new Map<string, Actor[]>()
   const spatial = new SpatialIndex<Actor>(4000, actor => actor.position)
@@ -386,6 +395,16 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
     }
   }
 
+  const damageAsteroid = (asteroid: AsteroidActor, amount: number, point: Vector3, normal: Vector3) => {
+    asteroid.health -= amount
+    callbacks.onImpact(point, normal, 1.1, 'armor')
+    if (asteroid.health <= 0 && !asteroid.defeated) {
+      asteroid.defeated = true
+      asteroid.mesh?.setEnabled(false)
+      callbacks.onAsteroidDestroyed?.(asteroid.id)
+    }
+  }
+
   const damageActor = (actor: Actor, amount: number, point: Vector3, normal: Vector3, critical = false, collision = false) => {
     const blocked = !actor.site && actor.mission?.objective === 'disable-signal' && !getSignalPulseState(elapsed).open
     const shielded = blocked || actor.shield > 0
@@ -497,6 +516,10 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
 
   return {
     getStatus(): WorldCombatStatus { return latestStatus },
+    setAsteroids(rocks: readonly { id: string; position: Vector3; radius: number; health: number; mesh: Mesh | null }[]) {
+      asteroidActors.length = 0
+      for (const rock of rocks) asteroidActors.push({ ...rock, defeated: false })
+    },
     enterPlanetOrbit(id: string) { enterPlanetOrbit(id); streaming.totalActors = actors.length },
     getPlanetOrbitStatus(id: string) {
       const fleet = orbitalFleets.get(id) ?? []
@@ -637,11 +660,11 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
         const attackRange = actor.site?.attackRange ?? Math.max(650, actor.mission?.activationRadius ?? 650)
         const hullFraction = actor.health / actor.maxHealth
         const beat = elapsed + actor.maneuverPhase
-        if (distance <= RENDER_DISTANCE * PURSUIT_SIGHT_MULTIPLIER) {
+        if (distance <= RENDER_DISTANCE * PURSUIT.sightMultiplier) {
           actor.lastPlayerPosition.copyFrom(input.position)
           actor.lastPlayerSeenAt = elapsed
         }
-        const pursuitMemory = elapsed - actor.lastPlayerSeenAt <= PURSUIT_MEMORY_SECONDS
+        const pursuitMemory = isPlayerTracked(distance, elapsed - actor.lastPlayerSeenAt, RENDER_DISTANCE)
         const pursuitPosition = pursuitMemory ? actor.lastPlayerPosition : input.position
         const pursuitDistance = Vector3.Distance(pursuitPosition, actor.position)
         const maneuver = actor.site ? getEnemyManeuver(actor.archetype, pursuitDistance, attackRange, beat, actor.hitFlash > 0, hullFraction) : null
@@ -847,7 +870,16 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
           }
         } else {
           let target: Actor | null = null
+          let asteroidTarget: AsteroidActor | null = null
           let firstContact = Infinity
+          for (const asteroid of asteroidActors) {
+            if (asteroid.defeated) continue
+            previousBoltPosition.subtractToRef(asteroid.position, relativeFrom)
+            bolt.mesh.position.subtractToRef(asteroid.position, relativeTo)
+            if (!segmentBoundsOverlapSphere(relativeFrom, relativeTo, zero, asteroid.radius)) continue
+            const contact = segmentSphereContact(relativeFrom, relativeTo, zero, asteroid.radius)
+            if (contact !== null && contact < firstContact && contact < planetContact) { asteroidTarget = asteroid; firstContact = contact }
+          }
           for (const actor of activeActors) {
             if (actor.defeated) continue
             previousBoltPosition.subtractToRef(actor.previousPosition, relativeFrom)
@@ -865,6 +897,11 @@ export function createWorldCombat(scene: Scene, callbacks: CombatCallbacks, worl
             const normal = point.subtract(center).normalize()
             const damage = applyArmorDamage(bolt.damage, getEnemyArmor(target.level, target.archetype, target.boss))
             damageActor(target, damage, point, normal, bolt.critical)
+          } else if (asteroidTarget) {
+            hit = true
+            const point = Vector3.Lerp(previousBoltPosition, bolt.mesh.position, firstContact)
+            const normal = point.subtract(asteroidTarget.position).normalize()
+            damageAsteroid(asteroidTarget, bolt.damage, point, normal)
           }
         }
         if (hit || planetContact < Infinity || bolt.remaining <= 0) { releaseBolt(bolt); bolts.splice(index, 1) }

@@ -14,9 +14,17 @@ it('builds hostile patrol wings that stay outside planetary collision shells', (
   const ships = buildDeepSpacePopulation(planets, stations, sun, 42)
   const hostileWings = ships.filter(ship => ship.id.startsWith('hostile-wing-'))
   expect(hostileWings.length).toBeGreaterThan(0)
+  // Each inhabited orbit should host several dense attack wings.
+  expect(hostileWings.length).toBeGreaterThanOrEqual(planets.length * 20)
   expect(hostileWings.every(ship => ship.formation && ship.attackRange! >= 120)).toBe(true)
   for (const ship of hostileWings) {
     expect(planets.some(planet => Math.hypot(ship.x - planet.x, ship.y - planet.y, ship.z - planet.z) <= planet.radius)).toBe(false)
   }
+})
+
+it('spawns every hostile wing outside friendly patrol slots with unique ids', () => {
+  const ships = buildDeepSpacePopulation(planets, stations, sun, 7)
+  const ids = ships.map(ship => ship.id)
+  expect(new Set(ids).size).toBe(ids.length)
 })
 

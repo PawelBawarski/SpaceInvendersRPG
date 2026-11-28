@@ -3,7 +3,7 @@ import { getOrbitAltitude, PLANET_CONTACT_RANGE } from '../domain/planetOrbit'
 import { ORBIT_ENTRY_DURATION, ORBIT_EXIT_DURATION, samplePlanetApproach } from '../simulation/PlanetApproach'
 import { forwardRotation } from '../simulation/StationApproach'
 import { useEffect, useRef, useState } from 'react'
-import { Color3, Color4, Engine, FreeCamera, GlowLayer, HemisphericLight, Matrix, Quaternion, Scene, SelectionOutlineLayer, TransformNode, Vector3 } from './babylon'
+import { Color3, Color4, Engine, FreeCamera, GlowLayer, HemisphericLight, Matrix, Mesh, MeshBuilder, Quaternion, Scene, SelectionOutlineLayer, TransformNode, Vector3 } from './babylon'
 import { GameAudio } from '../audio/GameAudio'
 import { DODGE_DURATION, resolveDamage } from '../domain/combat'
 import { applyDamageResistance, type DamageType } from '../domain/damageTypes'
@@ -17,17 +17,21 @@ import {
 import { InputController, type ControlBindings } from '../input/InputController'
 import { getMission, type MissionId } from '../missions/definitions'
 import type { GraphicsSettings } from '../progress/gameSettings'
+import { STARFIELD_DENSITY_STARS } from '../progress/gameSettings'
 import type { MissionProgress } from '../progress/missionProgress'
 import { getShipResistances } from '../progress/missionProgress'
 import { OVERDRIVE } from '../progress/pilotSkills'
 import { PLAYER_WEAPON } from '../domain/weapon'
 import { SHIP_PART_SLOTS, type EquippedPartRarities, type ShipPartBonuses } from '../progress/shipParts'
 import { advanceFlightMotion, FLIGHT_SPEEDS, FLIGHT_STEERING, getDodgeCooldown, getFlightTargetSpeed, integrateShipPitch, integrateShipRoll, readFlightUpdate } from '../simulation/FlightSimulation'
+import { sampleIdleDrift } from '../simulation/idleDrift'
 import { getZoneLevel, HYPERSPACE_SECONDS, type GalaxyId } from '../domain/galaxyChart'
 import { BOUNDARY_TRANSIT_SECONDS, clampGalaxyPosition, getBoundaryCourses, isGalaxyBoundary, returnFromGalaxyBoundary } from '../simulation/GalaxyTransit'
 import { getMaximumShipVitals, type ShipTelemetry } from '../domain/shipTelemetry'
 import { getShipVitals } from '../progress/shipMaintenance'
 import { advanceSolarExposure, createSolarExposureState } from '../simulation/SolarExposure'
+import { applyAtmosphericDrag, sampleAtmosphereEntry } from '../simulation/AtmosphereEntry'
+import { cockpitCameraPose, type CameraMode } from '../simulation/CockpitCamera'
 import { ShipStatusHud } from '../ui/ShipStatusHud'
 import { FlightRadar } from '../ui/FlightRadar'
 import { GameLoadingScreen } from '../ui/GameLoadingScreen'
@@ -44,13 +48,21 @@ import { createSpaceEnvironment } from './spaceEnvironment'
 import { createPlanetField } from './PlanetField'
 import { createShipBurnEffect, createSunVisual } from './StarHazard'
 import { createStationSystem } from './StationDocking'
+import { createMegastationVisual } from './megastationVisual'
+import { createCockpitInterior } from './cockpitInterior'
+import { ASTEROID_IMPACT, generateAsteroidField, type AsteroidBeltSite, type AsteroidRock } from '../domain/asteroidBelt'
+import { isMegastationInRange, MEGASTATION } from '../domain/megastation'
+import { SIGNALS } from '../domain/signals'
+import { getShipTier } from '../domain/shipTiers'
 import { createMerchantShip } from './MerchantShip'
 import { createWorldCombat, type WorldCombatStatus } from './WorldCombat'
 import { keepCameraOutsidePlanets, segmentSphereContact } from './worldCombatMath'
+import { clamp, formatDistance, formatSpeed } from './format'
+import { WorldBar } from '../ui/WorldBar'
 import { segmentBoundsOverlapSphere } from './collisionBroadphase'
 import { projectEnemyNameplates, type EnemyNameplate } from './EnemyNameplates'
 import { getHardwareScaling, spaceEffectsProfile } from './spaceEffectsProfile'
-import { enableSectorDepth } from './sectorDepth'
+import { enableSectorDepth, createSceneMaterial } from './sectorDepth'
 import '../../styles/renderer/WorldSector.scss'
 
 interface SectorCanvasProps {
@@ -64,6 +76,7 @@ interface SectorCanvasProps {
   mouseSensitivity: number
   shipLights: boolean
   onToggleLights: () => void
+  onEnterInterior?: () => void
   shipBonuses: ShipPartBonuses
   equippedPartRarities: EquippedPartRarities
   progress: MissionProgress
@@ -71,6 +84,7 @@ interface SectorCanvasProps {
   trackedStationId?: string | null
   repairStation?: StationSite
   paused: boolean
+  cameraMode?: CameraMode
   boundaryCourse: boolean
   boundaryReleaseId: number
   jumpDestination: GalaxyId | null
@@ -81,6 +95,7 @@ interface SectorCanvasProps {
   onDepartureComplete?: () => void
   onPlanetScan: (planetId: string) => void
   onDroneDefeated: (droneId: string, respawnAt?: number) => void
+  onAsteroidDestroyed: (asteroidId: string, beltId: string) => void
   onDroneRespawn: (droneId: string) => void
   onOrbitChange: (planetId: string | null) => void
   onSectorPositionChange: (position: SectorPosition, origin: GalaxyId) => void
@@ -96,13 +111,16 @@ interface SectorCanvasProps {
   onCombatStateChange?: (active: boolean) => void
   onTrackStation?: (stationId: string) => void
   onShipStatusChange?: (telemetry: ShipTelemetry) => void
+  onBoardMegastation?: () => void
+  onInvestigateSignal?: (id: string) => void
 }
 
 interface Waypoint { x: number; y: number; distance: number; name: string; behind: boolean }
 interface StationBeacon extends Waypoint { id: string; selected: boolean }
-type InteractionAction = 'land' | 'dock' | 'orbit' | 'leaveOrbit' | 'scan'
+type InteractionAction = 'land' | 'dock' | 'orbit' | 'leaveOrbit' | 'scan' | 'board' | 'investigate'
 interface InteractionHint { x: number; y: number; action: InteractionAction }
 const HUD_UPDATE_SECONDS = 0.12
+const ORBITAL_STATION_SCALE = 2.6
 const DOCKING_HUD_UPDATE_SECONDS = 0.1
 const FLIGHT_SAVE_SECONDS = 0.8
 const FLIGHT_MESSAGE_SECONDS = 5
@@ -112,6 +130,27 @@ const CAMERA_SURFACE_CLEARANCE = 1.8
 const CHASE_HEIGHT = 4
 const CRITICAL_HULL_FLAME = .34
 const PLANET_IMPACT = { collisionPadding: 2.4, recoveryPadding: 3.2, damage: 30, cooldownSeconds: 1.1 } as const
+/** Vertical band (percent of viewport) the HUD keeps waypoint beacons inside. */
+const BEACON_MIN_Y = 18
+const BEACON_MAX_Y = 76
+/** Minimum horizontal/vertical gap (percent) between overlapping HUD markers. */
+const BEACON_GUTTER = 20
+const BEACON_CLEARANCE = 11
+/** Candidate vertical offsets (percent) tried when placing the merchant beacon. */
+const MERCHANT_ROW_OFFSETS = [0, 13, -13, 26, -26, 39, -39] as const
+/** Distance (metres) within which the merchant beacon is shown. */
+const MERCHANT_BEACON_RANGE = 9500
+/** Distance (metres) within which a translation signal can be investigated. */
+const SIGNAL_SCAN_RANGE = 700
+/** Chase camera distance behind the ship at rest, plus the extra distance at full speed. */
+const CHASE_FOLLOW_BASE = 15
+const CHASE_FOLLOW_SPEED_BONUS = 3.5
+/** Exponential smoothing factor for the chase camera position. */
+const CHASE_CAMERA_LERP = 3.5
+/** Extra metres the orbit sight-convergence point is lifted above the planet. */
+const ORBIT_SIGHT_LIFT = 24
+/** Smoothing factor pulling the sight-convergence point toward the orbit centre. */
+const ORBIT_SIGHT_LERP = 0.38
 const EMPTY_COMBAT: WorldCombatStatus = {
   mission: null, boss: null, completedObjectives: 0, requiredObjectives: 0,
   engaged: false,
@@ -132,6 +171,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
   const [orbitPlanet, setOrbitPlanet] = useState(() => world.planets.find(planet => planet.id === progress.orbitPlanetId) ?? null)
   const [orbitalFleet, setOrbitalFleet] = useState({ total: 0, remaining: 0 })
   const [planetTravel, setPlanetTravel] = useState({ active: false, progress: 0, leaving: false, name: '' })
+  const [boardingProgress, setBoardingProgress] = useState(0)
   const [initialPosition] = useState(() => resolveSafeFlightPosition(clampGalaxyPosition({ x: progress.sectorX, y: progress.sectorY, z: progress.sectorDistance }, world.bounds), world.planets))
   const positionRef = useRef<SectorPosition>(initialPosition)
   const [position, setPosition] = useState(initialPosition)
@@ -156,9 +196,24 @@ export function SectorCanvas(props: SectorCanvasProps) {
   const [solarHeat, setSolarHeat] = useState({ intensity: 0, distance: Infinity, inZone: false })
   const [message, setMessage] = useState<LocalizedText | null>(null)
   const [impactFlash, setImpactFlash] = useState(0)
+  const [fps, setFps] = useState(0)
   const [docking, setDocking] = useState({ active: false, progress: 0, stage: 'idle', fade: 0 })
+  const [warping, setWarping] = useState(false)
+  const [speedReadout, setSpeedReadout] = useState(0)
   useEffect(() => { live.current = props }, [props])
   useEffect(() => { inputRef.current?.updateSettings(controls, mouseSensitivity) }, [controls, mouseSensitivity])
+  // Leave the seat (cockpit only) and walk inside the ship.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== 'KeyF' || event.repeat) return
+      const current = live.current
+      if (current.paused || current.cameraMode !== 'cockpit' || !current.onEnterInterior) return
+      event.preventDefault()
+      current.onEnterInterior()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const rendering = props.renderActive !== false
   useEffect(() => {
     inputRef.current?.setSuspended(paused)
@@ -176,7 +231,12 @@ export function SectorCanvas(props: SectorCanvasProps) {
     if (!canvas) return
     const settings = live.current
     const quality = settings.graphics.graphicsQuality
-    const { galaxy, bounds, planets: planetSites, stations: stationSites, sun: sunSite, merchant: merchantSite } = settings.world
+    const { galaxy, bounds, planets: planetSites, stations: rawStationSites, sun: sunSite, merchant: merchantSite } = settings.world
+    // Orbital stations are colossal (No Man's Sky style); scale the rendered hull and
+    // its docking envelope together so the ship always stops outside the structure.
+    const stationSites = rawStationSites.map(site => site.planetId ? site : {
+      ...site, radius: site.radius * ORBITAL_STATION_SCALE, dockingRange: site.dockingRange * ORBITAL_STATION_SCALE,
+    })
     const engine = new Engine(canvas, true, { adaptToDeviceRatio: true })
     engine.setHardwareScalingLevel(getHardwareScaling(settings.graphics))
     const scene = new Scene(engine)
@@ -211,10 +271,37 @@ export function SectorCanvas(props: SectorCanvasProps) {
     let appearance = createShipVisual(scene, settings.equippedPartRarities)
     appearance.name = 'playerShipAppearance'
     appearance.parent = ship
+    const applyShipTierScale = (node: TransformNode) => {
+      const scale = 1 + (getShipTier(settings.progress.activeShip).tier - 1) * 0.06
+      node.scaling.setAll(scale)
+    }
+    applyShipTierScale(appearance)
+    const cockpit = createCockpitInterior(scene, camera as unknown as TransformNode)
+    // Asteroid belts: static rocks rendered from shared geometry, reused for collision.
+    const asteroidRoot = new TransformNode('asteroidBelts', scene)
+    const asteroidMaterial = createSceneMaterial('asteroidRock', scene)
+    asteroidMaterial.diffuseColor = Color3.FromHexString('#6b6257')
+    asteroidMaterial.specularColor = new Color3(0.05, 0.05, 0.05)
+    const asteroidField: AsteroidRock[] = world.asteroidBelts.flatMap(belt => generateAsteroidField(belt, world.galaxy.seedSalt))
+    const asteroidMeshes = new Map<string, Mesh>()
+    const asteroidBeltByRock = new Map<string, AsteroidBeltSite>()
+    for (const belt of world.asteroidBelts) {
+      for (const rock of generateAsteroidField(belt, world.galaxy.seedSalt)) asteroidBeltByRock.set(rock.id, belt)
+    }
+    for (const rock of asteroidField) {
+      const mesh = MeshBuilder.CreateBox(rock.id, { size: 1 }, scene)
+      mesh.parent = asteroidRoot
+      mesh.position.set(rock.x, rock.y, rock.z)
+      mesh.scaling.set(rock.radius, rock.radius * 0.8, rock.radius)
+      mesh.rotation.set(rock.spin, rock.spin * 0.7, rock.spin * 1.3)
+      mesh.material = asteroidMaterial
+      mesh.isPickable = false
+      asteroidMeshes.set(rock.id, mesh)
+    }
     ship.position.set(positionRef.current.x, positionRef.current.y, positionRef.current.z)
     const protectCamera = () => keepCameraOutsidePlanets(ship.position, camera.position, planetSites, CAMERA_SURFACE_CLEARANCE)
     const focusCamera = (point: Vector3) => {
-      protectCamera()
+      if (live.current.cameraMode !== 'cockpit') protectCamera()
       camera.setTarget(point)
     }
     const sight = { origin: camera.position, direction: new Vector3(), convergence: new Vector3() }
@@ -224,6 +311,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
     focusCamera(ship.position.add(new Vector3(0, 0, PLAYER_WEAPON.sightConvergence)))
     const planets = createPlanetField(scene, planetSites, quality)
     const sun = createSunVisual(scene, sunSite, quality, galaxy.sunColor)
+    createMegastationVisual(scene, quality)
     const merchant = createMerchantShip(scene, merchantSite)
     merchant.update(ship.position)
     const burning = createShipBurnEffect(scene, ship, quality)
@@ -232,7 +320,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
     let thermalDamage = 0
     let resistances = getShipResistances(settings.progress)
     let previousStats = settings.progress
-    const stars = createSectorStarField(scene, 220, ship.position)
+    const stars = createSectorStarField(scene, STARFIELD_DENSITY_STARS[settings.graphics.starfieldDensity], ship.position)
     const baseCameraFov = camera.fov
     let effects = createFlightEffects(scene, ship, camera, quality, FLIGHT_SPEEDS.cruise, appearance)
     const applyGraphics = (config: GraphicsSettings) => {
@@ -241,12 +329,17 @@ export function SectorCanvas(props: SectorCanvasProps) {
       glow.isEnabled = config.bloom
       glow.intensity = spaceEffectsProfile(config.graphicsQuality).glowIntensity
       planets.configure(config.graphicsQuality, config.planetAtmospheres)
-      stars.setCount(config.graphicsQuality === 'high' ? 220 : config.graphicsQuality === 'low' ? 90 : 150)
+      stars.setCount(STARFIELD_DENSITY_STARS[config.starfieldDensity])
       effects.configure(config)
     }
     configureGraphics.current = applyGraphics
     applyGraphics(settings.graphics)
-    const stations = createStationSystem(scene, ship, camera, quality, stationSites)
+    const surfaceVisible = (site: (typeof stationSites)[number]) => {
+      if (!site.planetId) return true
+      const planet = planetSites.find(candidate => candidate.id === site.planetId)
+      return planet ? sampleAtmosphereEntry(planet, ship.position).inAtmosphere : false
+    }
+    const stations = createStationSystem(scene, ship, camera, quality, stationSites, surfaceVisible)
     if (settings.departureStationId) {
       stations.beginDeparture(settings.departureStationId)
       positionRef.current = { x: ship.position.x, y: ship.position.y, z: ship.position.z }
@@ -266,6 +359,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
     let maximum = getMaximumShipVitals(settings.progress.shieldLevel, settings.shipBonuses)
     const radarLandmarks = [
       ...stationSites.map(site => ({ ...site, kind: 'station' as const })),
+      ...planetSites.map(site => ({ ...site, kind: 'planet' as const })),
+      { ...MEGASTATION, id: MEGASTATION.id, kind: 'megastation' as const },
+      ...SIGNALS.map(signal => ({ ...signal, kind: 'signal' as const })),
       { ...merchantSite, id: MERCHANT_COURSE_ID, kind: 'merchant' as const },
     ]
     const initialVitals = getShipVitals(settings.progress, maximum)
@@ -275,11 +371,13 @@ export function SectorCanvas(props: SectorCanvasProps) {
       CRITICAL_HULL_FLAME * Math.max(0, 1 - hull / (maximum.hull * CRITICAL_HULL_FRACTION)))
     showHullDamage(appearance, hull / maximum.hull)
     let speed = 0
+  let idleClock = 0
     let collisionClock = 0
     let dodgeRemaining = 0
     let dodgeElapsed = 1
     let overdriveClock = 0
     let hudClock = 0
+    let lastCockpitRoll = Infinity
     let saveClock = 0
     let messageClock = 0
     let engaged = false
@@ -305,7 +403,11 @@ export function SectorCanvas(props: SectorCanvasProps) {
       live.current.onSectorPositionChange(positionRef.current, galaxy.id)
     }
     const returnFromBoundary = () => {
-      if (!awaitingGalaxyChoice) return
+      // Return inward whenever a release is requested while the ship is still
+      // parked on the galaxy edge. Guarding only on awaitingGalaxyChoice could
+      // leave the pilot stranded with nothing but "open chart" if that flag ever
+      // fell out of sync with the real position.
+      if (!awaitingGalaxyChoice && !isGalaxyBoundary(shipPosition(), bounds)) return
       const destination = returnFromGalaxyBoundary(shipPosition(), bounds)
       const displacement = new Vector3(destination.x - ship.position.x, destination.y - ship.position.y, destination.z - ship.position.z)
       ship.position.addInPlace(displacement)
@@ -352,6 +454,10 @@ export function SectorCanvas(props: SectorCanvasProps) {
       getProgress: () => live.current.progress,
       onPlayerHit: (amount, source) => receiveDamage(amount, 'kinetic', false, source),
       onEnemyDefeated: (id, respawnAt) => live.current.onDroneDefeated(id, respawnAt),
+      onAsteroidDestroyed: id => {
+        const belt = asteroidBeltByRock.get(id)
+        if (belt) live.current.onAsteroidDestroyed(id, belt.id)
+      },
       onEnemyRespawn: id => live.current.onDroneRespawn(id),
       onMissionComplete: id => live.current.onMissionComplete(id),
       onMissionProgress: (id, count) => live.current.onMissionObjectiveProgress(id, count),
@@ -379,9 +485,17 @@ export function SectorCanvas(props: SectorCanvasProps) {
       },
       damageNumbers,
     }, settings.world)
+    worldCombat.setAsteroids(asteroidField.map(rock => ({
+      id: rock.id,
+      position: new Vector3(rock.x, rock.y, rock.z),
+      radius: rock.radius,
+      health: rock.health,
+      mesh: asteroidMeshes.get(rock.id) ?? null,
+    })))
     let activeOrbit = planetSites.find(planet => planet.id === settings.progress.orbitPlanetId) ?? null
     if (activeOrbit) worldCombat.enterPlanetOrbit(activeOrbit.id)
     let orbitTransit: { planet: PlanetSite; from: Vector3; progress: number; leaving: boolean } | null = null
+    let boarding: { startedAt: number; from: Vector3 } | null = null
     let flightInteraction: { id: string; action: InteractionAction } | null = null
     const moveSafely = (destination: Vector3) => {
       let contact = Infinity
@@ -391,6 +505,28 @@ export function SectorCanvas(props: SectorCanvasProps) {
         if (!segmentBoundsOverlapSphere(ship.position, destination, planet, radius)) continue
         const hit = segmentSphereContact(ship.position, destination, planet, radius)
         if (hit !== null && hit < contact) { collision = planet; contact = hit }
+      }
+      let rockCollision: AsteroidRock | null = null
+      for (const rock of asteroidField) {
+        const radius = rock.radius + ASTEROID_IMPACT.collisionPadding
+        if (!segmentBoundsOverlapSphere(ship.position, destination, rock, radius)) continue
+        const hit = segmentSphereContact(ship.position, destination, rock, radius)
+        if (hit !== null && hit < contact) { rockCollision = rock; contact = hit }
+      }
+      if (rockCollision && !collision) {
+        const center = new Vector3(rockCollision.x, rockCollision.y, rockCollision.z)
+        const point = Vector3.Lerp(ship.position, destination, contact)
+        const away = point.subtract(center)
+        if (away.lengthSquared() < 0.01) away.set(0, 0, -1)
+        ship.position.copyFrom(center.add(away.normalize().scale(rockCollision.radius + ASTEROID_IMPACT.recoveryPadding)))
+        speed = 0
+        if (collisionClock <= 0) {
+          const asteroidLabel = localizedText((_text, language) => language === 'pl' ? 'Asteroida' : 'Asteroid')
+          receiveDamage(ASTEROID_IMPACT.damage, 'kinetic', false, { position: rockCollision, label: asteroidLabel, kind: 'collision' })
+          collisionClock = ASTEROID_IMPACT.cooldownSeconds
+          showMessage(localizedText((_text, language) => language === 'pl' ? 'Zderzenie z asteroidą' : 'Asteroid impact'))
+        }
+        return
       }
       if (!collision) { ship.position.copyFrom(destination); return }
       const center = new Vector3(collision.x, collision.y, collision.z)
@@ -421,17 +557,31 @@ export function SectorCanvas(props: SectorCanvasProps) {
       const nearbyObjective = encounter.boss && encounter.mission?.id === mission?.id
       const guide = mission && !nearbyObjective ? project(navigationTarget ?? mission.worldPosition, mission.title[live.current.language]) : null
       setWaypoint(guide)
-      const nearest = findNearestStation(ship.position, stationSites)
-      const beacon = project(nearest, nearest.name[live.current.language])
-      if (guide && Math.abs(guide.x - beacon.x) < 18 && Math.abs(guide.y - beacon.y) < 10) beacon.y = beacon.y > 45 ? beacon.y - 12 : beacon.y + 12
-      setStationBeacons([{ ...beacon, id: nearest.id, selected: nearest.id === live.current.trackedStationId }])
+      const availableStations = stationSites.filter(surfaceVisible)
+      const nearest = availableStations.length ? findNearestStation(ship.position, availableStations) : null
+      const beacon = nearest ? project(nearest, nearest.name[live.current.language]) : null
+      if (beacon && guide && Math.abs(guide.x - beacon.x) < BEACON_GUTTER && Math.abs(guide.y - beacon.y) < BEACON_CLEARANCE) beacon.y = beacon.y > 45 ? beacon.y - 12 : beacon.y + 12
+      setStationBeacons(nearest && beacon ? [{ ...beacon, id: nearest.id, selected: nearest.id === live.current.trackedStationId }] : [])
       const nearbyStation = activeOrbit ? null : stations.getNearbyStation(ship.position)
       setStation(nearbyStation)
       const nearbyPlanet = findNearestPlanet(ship.position, planetSites)
       const planetDistance = nearbyPlanet ? distanceToPlanetSurface(ship.position, nearbyPlanet) : Infinity
       const scanTarget = findNearbyPlanet(ship.position, planetSites)
       const canScan = scanTarget !== null && !live.current.progress.visitedPlanets.includes(scanTarget.id)
-      const actionTarget = nearbyStation ? {
+      const investigatedSignals = new Set(live.current.progress.investigatedSignals)
+      const nearbySignal = SIGNALS.find(signal => !investigatedSignals.has(signal.id)
+        && Math.hypot(signal.x - ship.position.x, signal.y - ship.position.y, signal.z - ship.position.z) < SIGNAL_SCAN_RANGE)
+      const actionTarget = !activeOrbit && isMegastationInRange(ship.position) ? {
+        position: MEGASTATION,
+        name: MEGASTATION.name[live.current.language],
+        action: 'board' as const,
+        id: MEGASTATION.id,
+      } : nearbySignal ? {
+        position: nearbySignal,
+        name: nearbySignal.name[live.current.language],
+        action: 'investigate' as const,
+        id: nearbySignal.id,
+      } : nearbyStation ? {
         position: nearbyStation,
         name: nearbyStation.name[live.current.language],
         action: nearbyStation.planetId ? 'land' as const : 'dock' as const,
@@ -456,12 +606,12 @@ export function SectorCanvas(props: SectorCanvasProps) {
       const actionPoint = actionTarget && project(actionTarget.position, actionTarget.name)
       setInteractionHint(actionPoint && actionTarget ? { x: actionPoint.x, y: actionPoint.y, action: actionTarget.action } : null)
       const trader = project(merchantSite, merchantSite.name[live.current.language])
-      const markers = guide ? [guide, beacon] : [beacon]
-      const freeRow = [0, 13, -13, 26, -26, 39, -39].map(offset => trader.y + offset).find(y =>
-        y >= 18 && y <= 76 && markers.every(marker => Math.abs(trader.x - marker.x) >= 20 || Math.abs(y - marker.y) >= 11))
+      const markers = beacon ? (guide ? [guide, beacon] : [beacon]) : guide ? [guide] : []
+      const freeRow = MERCHANT_ROW_OFFSETS.map(offset => trader.y + offset).find(y =>
+        y >= BEACON_MIN_Y && y <= BEACON_MAX_Y && markers.every(marker => Math.abs(trader.x - marker.x) >= BEACON_GUTTER || Math.abs(y - marker.y) >= BEACON_CLEARANCE))
       trader.y = freeRow ?? trader.y
       const trading = live.current.trackedStationId === MERCHANT_COURSE_ID
-      setMerchantBeacon(trading || trader.distance < 9500 ? trader : null)
+      setMerchantBeacon(trading || trader.distance < MERCHANT_BEACON_RANGE ? trader : null)
       setNearMerchant(trader.distance <= merchantSite.tradeRange)
     }
     const resize = () => engine.resize()
@@ -517,6 +667,7 @@ export function SectorCanvas(props: SectorCanvasProps) {
         appearance = createShipVisual(scene, current.equippedPartRarities)
         appearance.name = 'playerShipAppearance'
         appearance.parent = ship
+        applyShipTierScale(appearance)
         appearanceKey = nextAppearanceKey
         camera.fov = baseCameraFov
         effects = createFlightEffects(scene, ship, camera, current.graphics.graphicsQuality, FLIGHT_SPEEDS.cruise, appearance)
@@ -687,11 +838,40 @@ export function SectorCanvas(props: SectorCanvasProps) {
       }
       canvas.dataset.planetTransit = 'idle'
       canvas.dataset.orbitPlanet = activeOrbit?.id ?? ''
+      if (boarding) {
+        const progress = Math.min(1, (performance.now() - boarding.startedAt) / 2200)
+        const eased = progress * progress * (3 - 2 * progress)
+        const toCenter = new Vector3(MEGASTATION.x, MEGASTATION.y, MEGASTATION.z)
+        const outward = boarding.from.subtract(toCenter)
+        if (outward.lengthSquared() < 0.001) outward.set(0, 0, -1)
+        outward.normalize()
+        const target = toCenter.add(outward.scale(MEGASTATION.radius * 1.02))
+        Vector3.LerpToRef(boarding.from, target, eased, ship.position)
+        const facing = forwardRotation(outward.scale(-1))
+        ship.rotationQuaternion ??= Quaternion.FromEulerVector(ship.rotation)
+        Quaternion.SlerpToRef(ship.rotationQuaternion, Quaternion.FromEulerAngles(facing.pitch, facing.yaw, 0), Math.min(1, realDt * 4), ship.rotationQuaternion)
+        const chase = ship.position.subtract(ship.getDirection(Vector3.Forward()).scale(20)).addInPlaceFromFloats(0, 6, 0)
+        Vector3.LerpToRef(camera.position, chase, Math.min(1, realDt * 4), camera.position)
+        canvas.dataset.megastationTransit = 'boarding'
+        setBoardingProgress(progress)
+        if (progress >= 1) {
+          boarding = null
+          ship.rotationQuaternion.toEulerAnglesToRef(ship.rotation)
+          ship.rotationQuaternion = null
+          input.setSuspended(false)
+          canvas.dataset.megastationTransit = 'idle'
+          current.onBoardMegastation?.()
+        }
+        return
+      }
+      canvas.dataset.megastationTransit = 'idle'
       const mouse = input.readMouseFlight()
       input.setInteractionAvailable(Boolean(flightInteraction) && !engaged)
       const interactPressed = input.consumeInteractTap()
       if (interactPressed && flightInteraction && !engaged) {
         if (flightInteraction.action === 'land' || flightInteraction.action === 'dock') pendingDock.current = flightInteraction.id
+        else if (flightInteraction.action === 'board') { boarding = { startedAt: performance.now(), from: ship.position.clone() }; input.setSuspended(true) }
+        else if (flightInteraction.action === 'investigate') current.onInvestigateSignal?.(flightInteraction.id)
         else if (flightInteraction.action === 'leaveOrbit') pendingOrbit.current = { id: flightInteraction.id, leaving: true }
         else if (flightInteraction.action === 'orbit') pendingOrbit.current = { id: flightInteraction.id, leaving: false }
         else pendingScan.current = flightInteraction.id
@@ -717,7 +897,14 @@ export function SectorCanvas(props: SectorCanvasProps) {
       const right = ship.getDirection(Vector3.Right()).normalize()
       const previousPosition = ship.position.clone()
       const targetSpeed = getFlightTargetSpeed(thrust, bonuses) * (overdriving ? OVERDRIVE.speedMultiplier : 1)
-      const motion = advanceFlightMotion(speed, targetSpeed, dt)
+      const atmospherePlanet = findNearestPlanet(ship.position, planetSites)
+      const atmosphereEntry = atmospherePlanet ? sampleAtmosphereEntry(atmospherePlanet, ship.position) : null
+      if (atmosphereEntry?.inAtmosphere) speed = applyAtmosphericDrag(speed, atmosphereEntry, dt)
+      canvas.dataset.atmosphereEntry = atmosphereEntry ? atmosphereEntry.intensity.toFixed(3) : '0'
+      // No throttle input: hold perfectly still in space (no drift, no engine glow).
+      const motion = thrust === 0 && !overdriving
+        ? { speed: 0, distance: 0 }
+        : advanceFlightMotion(speed, targetSpeed, dt)
       speed = motion.speed
       moveSafely(ship.position.add(forward.scale(motion.distance)))
       if (commands.dodgeRequested && dodgeRemaining <= 0) {
@@ -745,18 +932,56 @@ export function SectorCanvas(props: SectorCanvasProps) {
       }
       const displacement = ship.position.subtract(previousPosition)
       camera.position.addInPlace(displacement)
+      // Gentle visual drift while idling so the ship floats in space (physics stays put).
+      idleClock += dt
+      const idleFactor = engaged || activeOrbit ? 0 : Math.max(0, 1 - Math.abs(speed) / (FLIGHT_SPEEDS.cruise * 0.3))
+      const drift = sampleIdleDrift(idleClock)
+      appearance.position.set(drift.x * idleFactor, drift.y * idleFactor, drift.z * idleFactor)
+      appearance.rotation.set(drift.pitch * idleFactor, drift.yaw * idleFactor, drift.roll * idleFactor)
+      const controlDeflect = (1 - idleFactor) * 0.1
+      appearance.rotation.z += -commands.yaw * controlDeflect
+      appearance.rotation.x += commands.pitch * controlDeflect * 0.6
       const velocity = displacement.scaleInPlace(1 / Math.max(0.001, dt))
-      const followDistance = 15 + Math.min(1, Math.abs(speed) / FLIGHT_SPEEDS.cruise) * 3.5
-      const chasePosition = ship.position.subtract(forward.scale(followDistance)).addInPlaceFromFloats(0, CHASE_HEIGHT, 0)
-      Vector3.LerpToRef(camera.position, chasePosition, Math.min(1, dt * 3.5), camera.position)
+      const followDistance = CHASE_FOLLOW_BASE + Math.min(1, Math.abs(speed) / FLIGHT_SPEEDS.cruise) * CHASE_FOLLOW_SPEED_BONUS
+      if (current.cameraMode === 'cockpit') {
+        cockpit.setVisible(true)
+        const roundedSpeed = Math.round(speed)
+        if (canvas.dataset.cockpitSpeed !== String(roundedSpeed)) {
+          canvas.dataset.cockpitSpeed = String(roundedSpeed)
+          cockpit.setSpeed(speed)
+        }
+        appearance.setEnabled(false)
+        camera.minZ = 0.1
+        const pose = cockpitCameraPose(ship.position, forward)
+        camera.position.set(pose.position.x, pose.position.y, pose.position.z)
+        camera.target.set(pose.target.x, pose.target.y, pose.target.z)
+        // Apply ship roll (Q/E barrel roll) only when it changes, to keep the view steady.
+        if (Math.abs(ship.rotation.z - lastCockpitRoll) > 0.0005) {
+          lastCockpitRoll = ship.rotation.z
+        camera.upVector.set(0, 1, 0)
+        lastCockpitRoll = Infinity
+          Vector3.TransformNormalToRef(
+            camera.upVector,
+            Matrix.RotationYawPitchRoll(ship.rotation.y, ship.rotation.x, ship.rotation.z),
+            camera.upVector,
+          )
+        }
+      } else {
+        cockpit.setVisible(false)
+        appearance.setEnabled(true)
+        camera.minZ = 0.5
+        camera.upVector.set(0, 1, 0)
+        const chasePosition = ship.position.subtract(forward.scale(followDistance)).addInPlaceFromFloats(0, CHASE_HEIGHT, 0)
+        Vector3.LerpToRef(camera.position, chasePosition, Math.min(1, dt * CHASE_CAMERA_LERP), camera.position)
+      }
       forward.scaleToRef(PLAYER_WEAPON.sightConvergence, sight.convergence).addInPlace(ship.position)
       if (activeOrbit) {
         orbitCenter.set(activeOrbit.x, activeOrbit.y, activeOrbit.z)
         ship.position.subtractToRef(orbitCenter, orbitRadial).normalize()
-        orbitCenter.addInPlace(orbitRadial.scaleInPlace(activeOrbit.radius + 24))
-        Vector3.LerpToRef(sight.convergence, orbitCenter, .38, sight.convergence)
+        orbitCenter.addInPlace(orbitRadial.scaleInPlace(activeOrbit.radius + ORBIT_SIGHT_LIFT))
+        Vector3.LerpToRef(sight.convergence, orbitCenter, ORBIT_SIGHT_LERP, sight.convergence)
       }
-      focusCamera(sight.convergence)
+      if (current.cameraMode !== 'cockpit') focusCamera(sight.convergence)
       sight.convergence.subtractToRef(camera.position, sight.direction).normalize()
       effects.update(dt, speed, thrust, overdriving)
       const engineSound = audio.updateEngine(speed / FLIGHT_SPEEDS.cruise, thrust)
@@ -800,6 +1025,9 @@ export function SectorCanvas(props: SectorCanvasProps) {
       if (hudClock >= HUD_UPDATE_SECONDS) {
         hudClock = 0
         const now = performance.now()
+        if (current.graphics.showFps) setFps(Math.round(engine.getFps()))
+        setWarping(Boolean(!current.departureStationId && !boarding && !activeOrbit && input.isDown('fullBoost') && speed > FLIGHT_SPEEDS.cruise))
+        setSpeedReadout(Math.round(Math.abs(speed)))
         setIncomingDamage(previous => {
           const next = previous.filter(item => now - item.createdAt < DAMAGE_MARKER_MILLISECONDS)
           return next.length === previous.length ? previous : next
@@ -873,13 +1101,21 @@ export function SectorCanvas(props: SectorCanvasProps) {
     orbit: gameText(language).flight.interactOrbit,
     leaveOrbit: gameText(language).flight.interactLeaveOrbit,
     scan: gameText(language).flight.interactScan,
+    board: gameText(language).flight.interactDock,
+    investigate: language === 'pl' ? 'Zbadaj sygnał' : 'Investigate signal',
   }
   return (
     <main className="game-shell sector-shell world-sector" data-galaxy={world.galaxy.id} data-world-position={`${Math.round(position.x)},${Math.round(position.y)},${Math.round(position.z)}`}>
       <canvas ref={canvasRef} className="game-canvas" data-testid="flight-canvas" aria-label={gameText(language).flight.sectorView}
         data-equipped-parts={SHIP_PART_SLOTS.filter(slot => equippedPartRarities[slot]).join(',')} />
       {!sceneReady && <GameLoadingScreen label={gameText(language).application.loadingGalaxy} />}
-      {impactFlash > 0 && <div key={impactFlash} className="impact-flash" aria-hidden="true" />}
+      {warping && props.cameraMode !== 'cockpit' && <div className="warp-streaks" aria-hidden="true" />}
+      {impactFlash > 0 && graphics.damageVignette && <div key={impactFlash} className="impact-flash" aria-hidden="true" />}
+      {graphics.showFps && fps > 0 && <div className="fps-readout" aria-hidden="true">{fps} FPS</div>}
+      {props.cameraMode !== 'cockpit' && <div className="speed-readout" aria-label={language === 'pl' ? 'Prędkość' : 'Speed'}>{formatSpeed(speedReadout)}</div>}
+      {props.progress.translationParts > 0 && !props.progress.translationRepaired && <div className="translation-tracker" role="status">
+        {language === 'pl' ? 'Moduł translacyjny' : 'Translation module'}: {props.progress.translationParts}/3
+      </div>}
         <ShipStatusHud language={language} shield={vitals.shield} maxShield={maximum.shield}
           hull={vitals.hull} maxHull={maximum.hull} dodgeRemaining={vitals.dodge}
           dodgeDuration={getDodgeCooldown(shipBonuses)} />
@@ -976,6 +1212,10 @@ export function SectorCanvas(props: SectorCanvasProps) {
         <strong>{planetTravel.name}</strong><span>{planetTravel.leaving ? (gameText(language).flight.returningToSpace) : (gameText(language).flight.orbitalApproach)}</span>
         <WorldBar label={gameText(language).flight.orbitalTransitProgress} value={planetTravel.progress * 100} maximum={100} shield />
       </aside>}
+      {boardingProgress > 0 && boardingProgress < 1 && <aside className="world-docking-status planet-transit-status">
+        <strong>{MEGASTATION.name[language]}</strong><span>{language === 'pl' ? ' dokowanie' : ' docking'}</span>
+        <WorldBar label={language === 'pl' ? 'Postęp dokowania' : 'Docking progress'} value={boardingProgress * 100} maximum={100} shield />
+      </aside>}
       {docking.active && <>
         <div className="world-docking-shade" style={{ opacity: docking.fade }} aria-hidden="true" />
         <aside className="world-docking-status"><span>{docking.stage === 'departure' ? (gameText(language).flight.departure) : (gameText(language).flight.docking)}</span>
@@ -986,13 +1226,3 @@ export function SectorCanvas(props: SectorCanvasProps) {
     </main>
   )
 }
-
-function WorldBar({ label, value, maximum, shield = false }: { label: string; value: number; maximum: number; shield?: boolean }) {
-  return <div className={`world-meter${shield ? ' is-shield' : ''}`} role="progressbar" aria-label={label}
-    aria-valuemin={0} aria-valuemax={maximum} aria-valuenow={Math.max(0, Math.round(value))}>
-    <i style={{ width: `${clamp(value / Math.max(1, maximum) * 100, 0, 100)}%` }} />
-  </div>
-}
-
-function clamp(value: number, minimum: number, maximum: number) { return Math.max(minimum, Math.min(maximum, value)) }
-function formatDistance(distance: number) { return distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.ceil(Math.max(0, distance))} m` }

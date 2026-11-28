@@ -36,7 +36,7 @@ export const DEFAULT_CONTROL_BINDINGS: ControlBindings = {
   boost: 'ShiftLeft',
   fullBoost: 'Space',
   brake: 'ControlLeft',
-  fire: 'KeyF',
+  fire: 'KeyJ',
   dodge: 'KeyK',
   lights: 'KeyH',
   overdrive: 'KeyX',
@@ -54,8 +54,8 @@ export class InputController {
   private interactionAvailable = false
   private bindings: ControlBindings
   private readonly mouseAim = { yaw: 0, pitch: 0 }
-  private lookPosition: { x: number; y: number } | undefined
   private flightPointer: number | undefined
+  private pointerLocked = false
   private mouseFire = false
   private mouseSensitivity: number
   private suspended = false
@@ -75,31 +75,47 @@ export class InputController {
   }
   private updatePointerButtons(event: PointerEvent) {
     this.mouseFire = (event.buttons & 1) !== 0
-    if (event.buttons & 2) this.lookPosition ??= { x: event.clientX, y: event.clientY }
-    else this.lookPosition = undefined
+  }
+  private readonly pointerLockChange = () => {
+    this.pointerLocked = document.pointerLockElement === this.canvas || document.pointerLockElement === this.pointerSurface
+  }
+  private requestLookLock() {
+    const target = this.canvas ?? this.pointerSurface
+    if (!target || document.pointerLockElement === target) return
+    try {
+      target.requestPointerLock?.()?.catch?.(() => {})
+    } catch {
+      /* pointer lock unavailable (e.g. unsupported surface) */
+    }
+  }
+  private releaseLookLock() {
+    if (document.pointerLockElement) document.exitPointerLock?.()
+    this.pointerLocked = false
   }
   private readonly pointerMove = (event: PointerEvent) => {
     if (event.pointerId !== this.flightPointer || this.suspended) return
-    const position = this.lookPosition
     this.updatePointerButtons(event)
-    if (!position || !this.lookPosition) return
-    this.mouseAim.yaw += event.clientX - position.x
-    this.mouseAim.pitch += event.clientY - position.y
-    position.x = event.clientX
-    position.y = event.clientY
+    // A single relative format: while the right button is held (or the pointer
+    // is locked) steer from the raw movement delta so the look never stalls at
+    // the screen edge.
+    if (!this.pointerLocked && (event.buttons & 2) === 0) return
+    this.mouseAim.yaw += event.movementX
+    // Never invert vertical look: mouse up looks up, mouse down looks down.
+    this.mouseAim.pitch -= event.movementY
   }
   private readonly pointerDown = (event: PointerEvent) => {
     if (this.suspended || (event.button !== 0 && event.button !== 2)) return
     if (event.button === 0 && event.target !== this.canvas) return
     this.flightPointer = event.pointerId
     this.updatePointerButtons(event)
+    if (event.button === 2) this.requestLookLock()
     event.preventDefault()
   }
   private readonly pointerEnd = (event: PointerEvent) => {
     if (event.pointerId !== this.flightPointer) return
     this.flightPointer = undefined
     this.mouseFire = false
-    this.lookPosition = undefined
+    if ((event.buttons & 2) === 0) this.releaseLookLock()
   }
   private readonly preventContextMenu = (event: MouseEvent) => {
     const surface = this.pointerSurface
@@ -113,7 +129,7 @@ export class InputController {
     this.taps.clear()
     this.mouseFire = false
     this.flightPointer = undefined
-    this.lookPosition = undefined
+    this.releaseLookLock()
     this.mouseAim.yaw = 0
     this.mouseAim.pitch = 0
     this.interactionTap = false
@@ -131,6 +147,8 @@ export class InputController {
     window.removeEventListener('blur', this.clearInput)
     this.pointerSurface?.removeEventListener('pointerdown', this.pointerDown, true)
     window.removeEventListener('contextmenu', this.preventContextMenu, true)
+    document.removeEventListener('pointerlockchange', this.pointerLockChange)
+    this.releaseLookLock()
   }
 
   constructor(
@@ -150,6 +168,7 @@ export class InputController {
     window.addEventListener('blur', this.clearInput)
     this.pointerSurface?.addEventListener('pointerdown', this.pointerDown, true)
     if (canvas) window.addEventListener('contextmenu', this.preventContextMenu, true)
+    document.addEventListener('pointerlockchange', this.pointerLockChange)
   }
 
   isDown(command: FlightCommand): boolean {

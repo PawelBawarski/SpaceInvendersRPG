@@ -12,6 +12,7 @@ const HULLS: Record<ShipArchetype, readonly HullSection[]> = {
   interceptor: [[-2.3, .025, .03], [-1.75, .21, .12], [-.7, .55, .26], [.35, .62, .29], [1.21, .48, .27], [1.57, .33, .2]],
   bomber: [[-1.7, .08, .08], [-1.35, .54, .32], [-.63, .89, .41], [.58, .92, .46], [1.32, .72, .35], [1.78, .42, .23]],
   frigate: [[-2.65, .06, .055], [-2.12, .43, .24], [-1.31, .69, .29], [-.05, .85, .41], [1.39, .85, .38], [2.17, .59, .29], [2.42, .48, .22]],
+  monster: [[-1.7, .08, .08], [-1.35, .54, .32], [-.63, .89, .41], [.58, .92, .46], [1.32, .72, .35], [1.78, .42, .23]],
 }
 
 const BOSS_HULLS: Record<FactionId, readonly HullSection[]> = {
@@ -58,6 +59,21 @@ function buildFleetModel(scene: Scene, name: string, faction: FactionId, archety
   }
   const guide = (part: string, coordinates: readonly (readonly [number, number, number])[], radius: number, surface: Surface = 'pulse') =>
     mount(MeshBuilder.CreateTube(name + '-' + part, { path: coordinates.map(([x, y, z]) => new Vector3(x, y, z)), radius, tessellation: 5 }, scene), surface)
+
+  if (archetype === 'monster' && !boss) {
+    const body = mount(MeshBuilder.CreateIcoSphere(name + '-body', { radius: 1.1, flat: true, subdivisions: 1 }, scene), 'shell')
+    body.scaling.set(1, .8, 1.3)
+    const eye = mount(MeshBuilder.CreateSphere(name + '-eye', { diameter: .5, segments: 8 }, scene), 'pulse')
+    eye.position.set(0, .15, 1.05)
+    for (let index = 0; index < 5; index += 1) {
+      const angle = index / 5 * Math.PI * 2
+      const spike = mount(MeshBuilder.CreateCylinder(name + '-spike' + index, { height: .9, diameterTop: 0, diameterBottom: .18, tessellation: 6 }, scene), 'alloy')
+      spike.position.set(Math.cos(angle) * .9, .2, Math.sin(angle) * .9)
+      spike.rotation.z = Math.PI / 2
+      spike.rotation.y = -angle
+    }
+    return root
+  }
 
   shell('pressure-shell', boss ? BOSS_HULLS[faction] : HULLS[archetype], 'shell', boss ? 24 : 20)
   const longWing = boss || archetype === 'interceptor' || archetype === 'frigate'

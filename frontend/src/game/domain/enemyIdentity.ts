@@ -8,6 +8,7 @@ const CLASSES: Record<ShipArchetype, LocalizedName> = {
   interceptor: localizedText(text => text.enemy.interceptor),
   bomber: localizedText(text => text.enemy.bomber),
   frigate: localizedText(text => text.enemy.frigate),
+  monster: localizedText((_text, language) => language === 'pl' ? 'Potwór' : 'Monster'),
 }
 const CULTURES: Record<FactionId, LocalizedName> = {
   meridian: localizedText(text => text.enemy.meridian), nacre: localizedText(text => text.enemy.nacre),

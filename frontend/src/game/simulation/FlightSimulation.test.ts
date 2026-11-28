@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONTROL_BINDINGS } from '../input/InputController'
-import { advanceFlightMotion, approachFlightSpeed, FLIGHT_SPEEDS, getFlightTargetSpeed, integrateShipRoll, readFlightUpdate } from './FlightSimulation'
+import { advanceFlightMotion, approachFlightSpeed, FLIGHT_CRUISE_THRUST, FLIGHT_SPEEDS, getFlightTargetSpeed, integrateShipRoll, readFlightUpdate } from './FlightSimulation'
 
 describe('flight simulation input', () => {
   it('combines mouse steering and firing with existing keyboard controls', () => {
@@ -12,20 +12,21 @@ describe('flight simulation input', () => {
     expect(update).toMatchObject({
       yaw: -0.6,
       pitch: -0.6,
-      thrust: 0.5,
+      thrust: 0.96,
       fireRequested: true,
     })
-    expect(DEFAULT_CONTROL_BINDINGS.fire).toBe('KeyF')
+    expect(DEFAULT_CONTROL_BINDINGS.fire).toBe('KeyJ')
     expect(DEFAULT_CONTROL_BINDINGS.fullBoost).toBe('Space')
   })
 
-  it('prioritizes full thrust over Shift and leaves firing to its own input', () => {
+  it('lets brake override thrust and keeps firing on its own input', () => {
     const both = readFlightUpdate(command => command === 'boost' || command === 'fullBoost' || command === 'brake')
-    expect(both.thrust).toBe(1)
+    expect(both.thrust).toBe(-1)
     expect(both.fireRequested).toBe(false)
-    expect(readFlightUpdate(command => command === 'boost').thrust).toBe(0.5)
+    expect(readFlightUpdate(command => command === 'boost' || command === 'fullBoost').thrust).toBe(1.2)
+    expect(readFlightUpdate(command => command === 'boost').thrust).toBe(0.96)
     expect(readFlightUpdate(command => command === 'brake').thrust).toBe(-1)
-    expect(readFlightUpdate(() => false).thrust).toBe(0)
+    expect(readFlightUpdate(() => false).thrust).toBe(FLIGHT_CRUISE_THRUST)
   })
 })
 

@@ -1,0 +1,45 @@
+.intro-cutscene {
+  position: fixed; inset: 0; overflow: hidden; background: #01030a; color: #e6f2ff;
+  display: grid; place-items: center; animation: introFadeIn 1.2s ease both;
+}
+.intro-starfield {
+  position: absolute; inset: -20%;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 70% 60%, #cfe6ff, transparent),
+    radial-gradient(1px 1px at 40% 80%, #fff, transparent),
+    radial-gradient(2px 2px at 85% 20%, #9fd0ff, transparent),
+    radial-gradient(1px 1px at 55% 45%, #fff, transparent);
+  background-size: 320px 320px;
+  animation: introDrift 18s linear infinite;
+  opacity: .9;
+}
+.intro-nebula {
+  position: absolute; inset: 0;
+  background: radial-gradient(60% 50% at 50% 45%, #16305a88, transparent 70%),
+    radial-gradient(40% 40% at 70% 70%, #3a1f5a66, transparent 70%);
+  animation: introPulse 6s ease-in-out infinite;
+}
+.intro-cutscene-content { position: relative; text-align: center; padding: 0 24px; animation: introRise 2.4s ease both; }
+.intro-eyebrow { letter-spacing: .5em; font-size: 12px; color: #7fb6e6; margin: 0 0 18px; }
+.intro-title { font-size: clamp(34px, 7vw, 78px); margin: 0; letter-spacing: .04em; text-shadow: 0 0 30px #2b6cb0; }
+.intro-subtitle { margin: 14px 0 0; font-size: clamp(14px, 2.2vw, 20px); color: #bcd6ee; letter-spacing: .12em; }
+.intro-threat { margin: 40px auto 0; max-width: 620px; font-size: 14px; line-height: 1.6; color: #9fb4c9; }
+.intro-threat strong { color: #ff9d7a; }
+.intro-beat {
+  margin: 24px auto 0; max-width: 640px; font-size: clamp(16px, 2.6vw, 22px);
+  line-height: 1.6; color: #d7e6f4; animation: introBeat 1s ease both;
+}
+@keyframes introBeat { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.intro-skip {
+  position: absolute; right: 26px; bottom: 24px; padding: 8px 16px; cursor: pointer;
+  background: transparent; border: 1px solid #4a6b8a; color: #cfe2f2; border-radius: 8px; font-size: 13px;
+}
+.intro-skip:hover { color: #fff; border-color: #8fd0ff; }
+@keyframes introFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes introDrift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-320px, -320px, 0); } }
+@keyframes introPulse { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
+@keyframes introRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .intro-starfield, .intro-nebula, .intro-cutscene-content { animation: none; }
+}

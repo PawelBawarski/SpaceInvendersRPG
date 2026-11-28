@@ -29,4 +29,11 @@ describe('world swept collisions', () => {
     keepCameraOutsidePlanets(center, camera, [{ ...center, radius: 50 }], 2)
     expect(Math.hypot(camera.x, camera.y, camera.z)).toBeCloseTo(52)
   })
+
+  it('keeps a minimum chase distance instead of collapsing into the anchor', () => {
+    const anchor = { x: 0, y: 0, z: -100 }
+    const camera = { x: 0, y: 0, z: 100 }
+    keepCameraOutsidePlanets(anchor, camera, [{ ...center, radius: 90 }], 2)
+    expect(Math.hypot(camera.x - anchor.x, camera.y - anchor.y, camera.z - anchor.z)).toBeCloseTo(9)
+  })
 })

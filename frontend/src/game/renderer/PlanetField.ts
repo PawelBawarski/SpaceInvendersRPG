@@ -5,6 +5,9 @@ import { createPlanetVisual } from './spaceEnvironment'
 import { spaceEffectsProfile } from './spaceEffectsProfile'
 import { createSceneMaterial } from './sectorDepth'
 
+/** Moons beyond this distance (metres) are hidden to cut draw calls. */
+const MOON_RENDER_DISTANCE = 20000
+
 /** Keep distant bodies visible; allocate terrain textures only around the pilot. */
 export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], quality: GraphicsQuality) {
   let detailQuality = quality
@@ -28,6 +31,10 @@ export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], qu
   }
   context.putImageData(bands, 0, 0)
   surface.update()
+  const moonMaterial = createSceneMaterial('planetMoonMaterial', scene)
+  moonMaterial.diffuseColor = Color3.FromHexString('#b9bec6')
+  moonMaterial.emissiveColor = Color3.FromHexString('#0a0d12')
+  moonMaterial.specularColor = Color3.Black()
   const entries = sites.map(site => {
     const proxy = template.clone(`planet-distant-${site.id}`)!
     proxy.setEnabled(true)
@@ -44,9 +51,19 @@ export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], qu
     proxy.freezeWorldMatrix()
     material.freeze()
     glow?.addExcludedMesh(proxy)
-    return { site, proxy, center: proxy.position.clone(), detail: null as Mesh | null, halo: null as Mesh | null, distance: Infinity }
+    const moons = (site.moons ?? []).map((moon, index) => {
+      const mesh = template.clone(`planet-moon-${site.id}-${index}`)!
+      mesh.setEnabled(true)
+      mesh.scaling.setAll(moon.radius)
+      mesh.material = moonMaterial
+      mesh.isPickable = false
+      glow?.addExcludedMesh(mesh)
+      return { mesh, moon }
+    })
+    return { site, proxy, center: proxy.position.clone(), moons, detail: null as Mesh | null, halo: null as Mesh | null, distance: Infinity }
   })
   let clock = 1
+  let elapsed = 0
   const streaming = { total: sites.length, budget: spaceEffectsProfile(quality).planetBudget, detailed: 0, created: 0, halos: 0 }
   scene.metadata = { ...scene.metadata, planetStreaming: streaming }
 
@@ -87,10 +104,25 @@ export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], qu
     },
     update(dt: number, position: Vector3) {
       clock += dt
-      for (const entry of entries) if (entry.detail) {
-        entry.detail.rotation.y += dt * 0.006
-        const updateEcosystem = entry.detail.metadata?.updateEcosystem as ((elapsed: number) => void) | undefined
-        updateEcosystem?.(dt)
+      elapsed += dt
+      for (const entry of entries) {
+        if (entry.detail) {
+          entry.detail.rotation.y += dt * 0.006
+          const updateEcosystem = entry.detail.metadata?.updateEcosystem as ((elapsed: number) => void) | undefined
+          updateEcosystem?.(dt)
+        }
+        const moonsVisible = Vector3.DistanceSquared(position, entry.center) < MOON_RENDER_DISTANCE * MOON_RENDER_DISTANCE
+        for (const { mesh, moon } of entry.moons) {
+          mesh.setEnabled(moonsVisible)
+          if (!moonsVisible) continue
+          const angle = moon.phase + elapsed * (Math.PI * 2 / moon.period)
+          const flat = Math.cos(angle) * moon.distance
+          mesh.position.set(
+            entry.center.x + flat,
+            entry.center.y + Math.sin(angle) * moon.distance * Math.sin(moon.inclination),
+            entry.center.z + Math.sin(angle) * moon.distance,
+          )
+        }
       }
       if (clock < 0.35) return
       clock = 0
@@ -130,8 +162,10 @@ export function createPlanetField(scene: Scene, sites: readonly PlanetSite[], qu
         glow?.removeExcludedMesh(entry.proxy)
         entry.proxy.material?.dispose()
         entry.proxy.dispose()
+        for (const { mesh } of entry.moons) { glow?.removeExcludedMesh(mesh); mesh.dispose(false, false) }
         if (entry.halo) { glow?.removeExcludedMesh(entry.halo); entry.halo.dispose(false, true) }
       }
+      moonMaterial.dispose()
       surface.dispose()
       template.dispose()
     },

@@ -6,6 +6,7 @@ import { sampleFormationPosition, samplePatrolRoute, type PatrolFormation } from
 import { buildDeepSpacePopulation } from './worldPopulation'
 import { buildGalaxyLayout, buildPlanetHangars, GALAXY_BOUNDS, type GalaxyBounds } from './galaxyLayout'
 import { getGalaxy, ORION_SECTOR_ID, type Galaxy, type GalaxyId } from './galaxyChart'
+import { buildAsteroidBelts, type AsteroidBeltSite } from './asteroidBelt'
 export { createWorldShip, FACTIONS, SHIP_ARCHETYPES } from './worldFactions'
 export type { FactionId, ShipArchetype, CombatShipProfile } from './worldFactions'
 export { ORION_SECTOR_ID } from './galaxyChart'
@@ -16,6 +17,20 @@ export interface SectorPosition {
   z: number
 }
 
+/** A natural satellite orbiting a planet; distances are in metres, period in seconds. */
+export interface PlanetMoon {
+  radius: number
+  /** Orbit radius measured from the planet centre. */
+  distance: number
+  color: string
+  /** Seconds for one full orbit. */
+  period: number
+  /** Starting angle in radians so moons are not all aligned. */
+  phase: number
+  /** Orbit tilt in radians around the planet's local X axis. */
+  inclination: number
+}
+
 export interface PlanetSite extends SectorPosition {
   orbitalFaction?: FactionId
   hasHangar?: boolean
@@ -24,6 +39,10 @@ export interface PlanetSite extends SectorPosition {
   description: LocalizedText
   color: string
   radius: number
+  /** Optional atmosphere shell height in metres above the surface. */
+  atmosphere?: number
+  /** Natural satellites rendered and animated by the planet field. */
+  moons?: readonly PlanetMoon[]
 }
 
 export interface DroneSite extends SectorPosition {
@@ -74,11 +93,14 @@ export interface GalaxyWorld {
   planets: readonly PlanetSite[]
   stations: readonly StationSite[]
   drones: readonly DroneSite[]
+  asteroidBelts: readonly AsteroidBeltSite[]
   sun: SunSite
   merchant: MerchantSite
 }
 
-const ORION_SCALE = 3
+const ORION_SCALE = 3.75
+/** Uniform body enlargement (planets + sun) relative to the fixed-size ship. */
+const ORION_BODY_SCALE = 2.5
 export const ORION_SECTOR_BOUNDS: Readonly<GalaxyBounds> = {
   minX: GALAXY_BOUNDS.minX * ORION_SCALE, maxX: GALAXY_BOUNDS.maxX * ORION_SCALE,
   minY: GALAXY_BOUNDS.minY * ORION_SCALE, maxY: GALAXY_BOUNDS.maxY * ORION_SCALE,
@@ -91,7 +113,7 @@ const ORIGINAL_ORION_SUN: Readonly<SunSite> = {
 }
 
 function scaleOrionBody<T extends PlanetSite | SunSite>(site: T): T {
-  return { ...site, x: site.x * ORION_SCALE, y: site.y * ORION_SCALE, z: site.z * ORION_SCALE, radius: site.radius * 2 }
+  return { ...site, x: site.x * ORION_SCALE, y: site.y * ORION_SCALE, z: site.z * ORION_SCALE, radius: site.radius * ORION_BODY_SCALE }
 }
 
 export const ORION_SUN = scaleOrionBody(ORIGINAL_ORION_SUN)
@@ -101,8 +123,8 @@ export const ORION_START_POSITION: Readonly<SectorPosition> = { x: 0, y: 0, z: 0
 export const ORION_STATIONS: readonly StationSite[] = [
   {
     id: 'meridian-haven', name: localizedText(text => text.world.meridianHaven),
-    x: 0, y: 0, z: 1800, radius: 180, dockingRange: 440,
-    launchPosition: { x: 0, y: 0, z: 1480 }, faction: 'meridian', color: '#78cfff',
+    x: 0, y: 0, z: 225, radius: 180, dockingRange: 440,
+    launchPosition: { x: 0, y: 0, z: 560 }, faction: 'meridian', color: '#78cfff',
   },
   {
     id: 'nacre-crossing', name: localizedText(text => text.world.nacreCrossing),
@@ -111,8 +133,8 @@ export const ORION_STATIONS: readonly StationSite[] = [
   },
   {
     id: 'foundry-bastion', name: localizedText(text => text.world.foundryBastion),
-    x: 4200, y: 1400, z: 42000, radius: 300, dockingRange: 600,
-    launchPosition: { x: 4200, y: 1400, z: 41560 }, faction: 'meridian', color: '#ffbd7b',
+    x: 4200, y: 1400, z: 50000, radius: 300, dockingRange: 600,
+    launchPosition: { x: 4200, y: 1400, z: 49560 }, faction: 'meridian', color: '#ffbd7b',
   },
 ]
 
@@ -390,11 +412,11 @@ const PREVIOUS_ORION_DRONES: readonly DroneSite[] = [
 ]
 
 const FLEET_FACTIONS: readonly FactionId[] = ['meridian', 'nacre', 'null-cult', 'ashen-legion']
-const FLEET_ARCHETYPES: readonly ShipArchetype[] = ['scout', 'interceptor', 'bomber', 'frigate']
+const FLEET_ARCHETYPES: readonly ShipArchetype[] = ['scout', 'interceptor', 'bomber', 'frigate', 'monster', 'monster']
 
 function buildWorldFleet(seed = 61483): DroneSite[] { return [
   ...PREVIOUS_ORION_DRONES.map((site, index) => ({
-    ...createWorldShip(site.id, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[index % 4], {
+    ...createWorldShip(site.id, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[index % FLEET_ARCHETYPES.length], {
       x: site.x * 10, y: site.y * 10, z: site.z * 10,
     }),
     health: site.health * 2,
@@ -425,14 +447,14 @@ function buildWorldFleet(seed = 61483): DroneSite[] { return [
       )
     })
   }),
-  ...Array.from({ length: 120 }, (_, index): DroneSite => {
+  ...Array.from({ length: 180 }, (_, index): DroneSite => {
     const groupIndex = Math.floor(index / 4)
     const slot = index % 4
     const planet = ORION_PLANETS[(groupIndex * 2 + (slot === 3 ? 1 : 0)) % ORION_PLANETS.length]
     const angle = groupIndex * 2.399963229728653 + 0.85
     if (slot === 3) {
       const orbit = planet.radius + 740
-      return createWorldShip(`outer-patrol-${index + 1}`, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[groupIndex % 4], {
+      return createWorldShip(`outer-patrol-${index + 1}`, FLEET_FACTIONS[index % 4], FLEET_ARCHETYPES[groupIndex % FLEET_ARCHETYPES.length], {
         x: planet.x + Math.cos(angle) * orbit, y: planet.y + 120, z: planet.z + Math.sin(angle) * orbit,
       })
     }
@@ -444,7 +466,7 @@ function buildWorldFleet(seed = 61483): DroneSite[] { return [
     }
     const route = samplePatrolRoute(formation, 0)
     return {
-      ...createWorldShip(`outer-patrol-${index + 1}`, FLEET_FACTIONS[groupIndex % 4], FLEET_ARCHETYPES[(groupIndex + slot) % 4], sampleFormationPosition(route.center, route.forward, slot)),
+      ...createWorldShip(`outer-patrol-${index + 1}`, FLEET_FACTIONS[groupIndex % 4], FLEET_ARCHETYPES[(groupIndex + slot) % FLEET_ARCHETYPES.length], sampleFormationPosition(route.center, route.forward, slot)),
       formation,
     }
   }),
@@ -466,7 +488,7 @@ export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld 
     name: localizedText(text => text.world.exchangeArk),
     x: -880, y: 160, z: 3100, radius: 230, tradeRange: 1150,
   }
-  if (id === ORION_SECTOR_ID) return { galaxy, bounds: ORION_SECTOR_BOUNDS, planets: ORION_PLANETS, stations: ALL_HANGARS, drones: ORION_DRONES, sun: ORION_SUN, merchant }
+  if (id === ORION_SECTOR_ID) return { galaxy, bounds: ORION_SECTOR_BOUNDS, planets: ORION_PLANETS, stations: ALL_HANGARS, drones: ORION_DRONES, asteroidBelts: buildAsteroidBelts(ORION_PLANETS, campaignSeed), sun: ORION_SUN, merchant }
 
   const seed = (campaignSeed ^ galaxy.seedSalt) >>> 0 || 1
   const side = id === 'vesper' ? -1 : 1
@@ -488,7 +510,7 @@ export function getGalaxyWorld(id: GalaxyId, campaignSeed: number): GalaxyWorld 
   }))
   const stations = [...ports, ...buildPlanetHangars(planets)]
   const drones = buildDeepSpacePopulation(planets, stations, sun, seed).map(drone => ({ ...drone, id: `${id}-${drone.id}` }))
-  return { galaxy, bounds: GALAXY_BOUNDS, planets, stations, drones, sun, merchant: { ...merchant, x: merchant.x * side } }
+  return { galaxy, bounds: GALAXY_BOUNDS, planets, stations, drones, asteroidBelts: buildAsteroidBelts(planets, seed), sun, merchant: { ...merchant, x: merchant.x * side } }
 }
 
 export const VEIL_PATROL_DRONE: DroneSite = {

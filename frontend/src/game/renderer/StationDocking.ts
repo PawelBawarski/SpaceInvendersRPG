@@ -7,7 +7,7 @@ import { createProfiledHull } from './ProfiledHull'
 
 const PLANETARY_HANGAR_VISUAL_SCALE = 3.2
 
-export function createStationSystem(scene: Scene, ship: TransformNode, camera: FreeCamera, quality: GraphicsQuality, sites: readonly StationSite[] = ALL_HANGARS) {
+export function createStationSystem(scene: Scene, ship: TransformNode, camera: FreeCamera, quality: GraphicsQuality, sites: readonly StationSite[] = ALL_HANGARS, surfaceVisibility: (station: StationSite) => boolean = () => true) {
   const stations = sites.map(station => {
     const root = new TransformNode(`station-${station.id}`, scene)
     root.metadata = { stationId: station.id, dockingRange: station.dockingRange }
@@ -113,7 +113,7 @@ export function createStationSystem(scene: Scene, ship: TransformNode, camera: F
 
   return {
     getNearbyStation(position: SectorPosition): StationSite | null {
-      return sites.find(station => canDockAt(position, station)) ?? null
+      return sites.find(station => surfaceVisibility(station) && canDockAt(position, station)) ?? null
     },
     beginDocking(stationId: string): boolean {
       if (active) return false
@@ -142,7 +142,7 @@ export function createStationSystem(scene: Scene, ship: TransformNode, camera: F
       return true
     },
     update(dt: number, hangarReady: boolean) {
-      for (const { root, center } of stations) root.setEnabled(Vector3.DistanceSquared(ship.position, center) < 12000 ** 2)
+      for (const { root, center, station } of stations) root.setEnabled(surfaceVisibility(station) && Vector3.DistanceSquared(ship.position, center) < 12000 ** 2)
       if (active) {
         progress = departing ? Math.min(1, progress + Math.max(0, dt) / DEPARTURE_DURATION) : advanceDockingProgress(progress, dt, hangarReady)
         const sample = (p: number) => departing ? sampleStationDeparture(active!, p) : sampleStationApproach(active!, start, p)

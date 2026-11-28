@@ -3,10 +3,10 @@ import { sampleFormationPosition, samplePatrolRoute } from './patrolFormation'
 import { createWorldShip, type FactionId, type ShipArchetype } from './worldFactions'
 
 const POPULATION = {
-  formationShips: 2400, roamingShips: 2500, nearbyRoamers: 320, seedFallback: 61483,
+  formationShips: 3200, roamingShips: 5200, nearbyRoamers: 720, seedFallback: 61483,
   stationClearance: 14000, solarClearance: 14000, formationOffsetY: 180,
-  shipsPerFormation: 3,
-  hostileWingsPerPlanet: 3, hostileShipsPerWing: 4, hostilePatrolClearance: 5200, hostilePatrolStep: 740,
+  shipsPerFormation: 4,
+  hostileWingsPerPlanet: 7, hostileShipsPerWing: 5, hostilePatrolClearance: 5200, hostilePatrolStep: 740,
   formationOrbitRadius: 1800, formationOrbitStep: 360, formationLayers: 3,
   formationSpeed: { minimum: 18, variation: 8 },
   nearbySpawn: { xMinimum: 2600, xVariation: 19000, halfHeight: 4000, zMinimum: 6500, zVariation: 100000 },

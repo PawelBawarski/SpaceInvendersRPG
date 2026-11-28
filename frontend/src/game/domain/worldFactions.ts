@@ -3,7 +3,7 @@ import type { DroneSite, SectorPosition } from './exploration'
 import type { MissionId } from '../missions/definitions'
 
 export type FactionId = 'meridian' | 'nacre' | 'null-cult' | 'ashen-legion'
-export type ShipArchetype = 'scout' | 'interceptor' | 'bomber' | 'frigate'
+export type ShipArchetype = 'scout' | 'interceptor' | 'bomber' | 'frigate' | 'monster'
 
 export interface FactionDefinition {
   name: LocalizedText
@@ -46,6 +46,7 @@ export const SHIP_ARCHETYPES: Readonly<Record<ShipArchetype, CombatShipProfile>>
   interceptor: { health: 85, damage: 12, attackInterval: 1.8, attackRange: 110, projectileSpeed: 95, speed: 28 },
   bomber: { health: 150, damage: 23, attackInterval: 3.4, attackRange: 150, projectileSpeed: 58, speed: 12 },
   frigate: { health: 340, damage: 19, attackInterval: 2.2, attackRange: 190, projectileSpeed: 82, speed: 9 },
+  monster: { health: 120, damage: 16, attackInterval: 1.5, attackRange: 90, projectileSpeed: 120, speed: 22 },
 }
 
 export function createWorldShip(

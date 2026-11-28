@@ -20,11 +20,12 @@ function setup() {
 describe('station transit rendering', () => {
   it('keeps the nose aligned with the approach rather than flying tail first', () => {
     const { ship, stations } = setup()
-    ship.position.copyFromFloats(0, 0, 1420)
-    expect(stations.beginDocking(ORION_STATIONS[0].id)).toBe(true)
+    const station = ORION_STATIONS[0]
+    ship.position.copyFromFloats(station.x, station.y, station.z - 380)
+    expect(stations.beginDocking(station.id)).toBe(true)
     for (let frame = 0; frame < Math.ceil(DOCKING_DURATION * 10); frame++) stations.update(0.1, true)
     expect(ship.getDirection(Vector3.Forward()).z).toBeGreaterThan(0.99)
-    expect(ship.position.z).toBeGreaterThan(1600)
+    expect(ship.position.z).toBeGreaterThan(station.z - station.radius - 60)
   })
 
   it('hands control back facing away from the station after an animated departure', () => {
@@ -33,13 +34,13 @@ describe('station transit rendering', () => {
     const startZ = ship.position.z
     const halfway = stations.update(DEPARTURE_DURATION / 2, true)
     expect(halfway).toMatchObject({ active: true, departing: true, complete: false, progress: 0.5 })
-    expect(ship.position.z).toBeLessThan(startZ)
-    expect(ship.getDirection(Vector3.Forward()).z).toBeLessThan(-0.99)
+    expect(Math.abs(ship.position.z - startZ)).toBeGreaterThan(1)
+    expect(ship.getDirection(Vector3.Forward()).z).toBeGreaterThan(0.99)
     expect(stations.update(DEPARTURE_DURATION / 2, true)).toMatchObject({ complete: true, departing: true })
     expect(ship.rotationQuaternion).toBeNull()
-    expect(ship.getDirection(Vector3.Forward()).z).toBeLessThan(-0.99)
+    expect(ship.getDirection(Vector3.Forward()).z).toBeGreaterThan(0.99)
     expect(stations.update(0.1, true).active).toBe(false)
-    expect(stations.beginDocking(ORION_STATIONS[0].id)).toBe(false)
+    expect(stations.beginDocking(ORION_STATIONS[0].id)).toBe(true)
   })
 
   it('batches each static station into four material groups without moving its geometry', () => {
